@@ -1,6 +1,6 @@
 {
   "name": "xunhuan",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "小而快的迭代器库",
   "keywords": ["iterator", "functional", "lazy", "collection", "util"],
@@ -22,9 +22,10 @@
     "test": "vitest --coverage",
     "bench": "vitest bench",
     "fmt": "biome format --fix",
-    "check": "biome lint && tsc",
+    "check": "biome lint --error-on-warnings && tsc",
     "compile": "vite build",
-    "build": "pnpm run fmt && pnpm run check && pnpm run compile"
+    "build": "pnpm run fmt && pnpm run check && pnpm run compile",
+    "pub": "pnpm build && pnpm publish --registry=https://registry.npmjs.org/"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
