@@ -1,6 +1,6 @@
 // biome-ignore lint/correctness/noUnusedImports: for jsdoc link
 import type * as X from '.'
-import type { Iter, Maybe, ValOf } from './base'
+import type { Iter, KeyOf, Maybe, ValOf } from './base'
 
 /**
  * 获取第一个值。
@@ -440,7 +440,7 @@ export const max: {
 /**
  * 迭代器转对象，类似 {@linkcode Object.fromEntries}。
  *
- * 效果等同于 `Object.fromEntries(X.toArr(X.toEntries(iter)))`。
+ * 效果等同于 `Object.fromEntries(X.toArr(X.toEntries(self)))`。
  *
  * 方法，返回对象，键重复则取后者。
  *
@@ -495,4 +495,63 @@ export const groupObj: {
     return true
   })
   return obj
+}
+
+/**
+ * 迭代器转 {@linkcode Map}。
+ *
+ * 效果等同于 `new Map(X.toArr(X.toEntries(self)))`。
+ *
+ * 方法，返回 {@linkcode Map}，键重复则取后者。
+ *
+ * @example
+ * ```ts @import.meta.vitest
+ * expect(X.ofArr([['a', 1], ['b', 2], ['a', 3]]).c(
+ *   X.ofEntries,
+ *   X.toMap,
+ * )).toEqual(new Map([['a', 3], ['b', 2]]))
+ * ```
+ *
+ * @see {@linkcode X.toObj}
+ * @see {@linkcode X.toSet}
+ * @see {@linkcode X.toArr}
+ * @see {@linkcode X.toEntries}
+ */
+export const toMap: {
+  <T, K>(self: Iter<T, K>): Map<K, T>
+} = self => {
+  self.k()
+  let map = new Map<KeyOf<typeof self>, ValOf<typeof self>>()
+  self.e((v, k) => {
+    map.set(k, v)
+    return true
+  })
+  return map
+}
+
+/**
+ * 迭代器转 {@linkcode Set}。
+ *
+ * 效果等同于 `new Set(X.toArr(self))`。
+ *
+ * 方法，返回 {@linkcode Set}。
+ *
+ * @example
+ * ```ts @import.meta.vitest
+ * expect(X.toSet(X.ofArr([1, 2, 3]))).toEqual(new Set([1, 2, 3]))
+ * ```
+ *
+ * @see {@linkcode X.toMap}
+ * @see {@linkcode X.toArr}
+ */
+export const toSet: {
+  <T>(self: Iter<T>): Set<T>
+} = self => {
+  self.k()
+  let set = new Set<ValOf<typeof self>>()
+  self.e((v, _) => {
+    set.add(v)
+    return true
+  })
+  return set
 }

@@ -82,7 +82,18 @@ type Folder = (acc: number, v: number, k: Key) => number
 
 type Consume =
   | { t: 'all' | 'any' | 'find'; f: Mapper<boolean> }
-  | { t: 'arr' | 'iter' | 'obj' | 'groupObj' | 'first' | 'last' | 'count' }
+  | {
+      t:
+        | 'arr'
+        | 'iter'
+        | 'obj'
+        | 'groupObj'
+        | 'first'
+        | 'last'
+        | 'count'
+        | 'map'
+        | 'set'
+    }
   | { t: 'fold'; f: Folder; init: number }
   | { t: 'fold1'; f: Folder }
 
@@ -307,6 +318,8 @@ const consumeX = (e: Consume, i: X.Iter<number, Key>) =>
     .with({ t: 'first' }, () => X.first(i))
     .with({ t: 'last' }, () => X.last(i))
     .with({ t: 'count' }, () => i.c(X.count))
+    .with({ t: 'map' }, () => i.c(X.toMap))
+    .with({ t: 'set' }, () => i.c(X.toSet))
     .with({ t: 'all' }, ({ f }) => i.c(X.all(f)))
     .with({ t: 'any' }, ({ f }) => i.c(X.any(f)))
     .with({ t: 'find' }, ({ f }) => i.c(X.find(f)))
@@ -420,6 +433,8 @@ const consumeE = (e: Consume, i: Iterable<[number, Key]>) =>
     .with({ t: 'first' }, () => E.get(i, 0)?.[0])
     .with({ t: 'last' }, () => E.last(i)?.[0])
     .with({ t: 'count' }, () => E.length(i))
+    .with({ t: 'map' }, () => new Map(i))
+    .with({ t: 'set' }, () => new Set(E.map(i, ([v]) => v)))
     .with({ t: 'all' }, ({ f }) => E.every(i, ([v, k]) => f(v, k)))
     .with({ t: 'any' }, ({ f }) => E.some(i, ([v, k]) => f(v, k)))
     .with({ t: 'find' }, ({ f }) => E.find(i, ([v, k]) => f(v, k))?.[0])
