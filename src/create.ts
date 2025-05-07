@@ -27,11 +27,7 @@ export const ofArr: {
   <T>(arr: ArrayLike<T>): Iter<T, number>
 } = arr => _ofArr(arr, 0, arr.length)
 
-const _ofArr = <T>(
-  arr: ArrayLike<T>,
-  from: number,
-  to: number,
-): Iter<T, number> => {
+const _ofArr = <T>(arr: ArrayLike<T>, from: number, to: number): Iter<T, number> => {
   let i = from
   return new Iter(
     () => (i < to ? { v: arr[i], k: i } : undefined),

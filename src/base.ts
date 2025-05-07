@@ -133,18 +133,13 @@ export class Iter<out T, out K = unknown> {
   c<A, B, C, D, E, F, O>(...f: Fns<this, [A, B, C, D, E, F, O]>): O
   c<A, B, C, D, E, F, G, O>(...f: Fns<this, [A, B, C, D, E, F, G, O]>): O
   c<A, B, C, D, E, F, G, H, O>(...f: Fns<this, [A, B, C, D, E, F, G, H, O]>): O
-  c<F extends ((v: any) => any)[], Z, O>(
-    ...f: CheckFns<this, [...F, (v: Z) => O]>
-  ): O
+  c<F extends ((v: any) => any)[], Z, O>(...f: CheckFns<this, [...F, (v: Z) => O]>): O
   c(...f: ((v: any) => any)[]) {
     return f.reduce((v, f) => f(v), this)
   }
 }
 
-export const cInit = <B extends Maybe<() => void>>(
-  a: Maybe<() => void>,
-  b: B,
-) => {
+export const cInit = <B extends Maybe<() => void>>(a: Maybe<() => void>, b: B) => {
   if (!a) return b
   if (!b) return a
   return () => {

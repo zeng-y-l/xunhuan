@@ -193,10 +193,7 @@ export const find: {
  * @see {@linkcode X.find}
  */
 export const findMap: {
-  <T, K, R>(
-    pred: (v: T, k: K) => boolean,
-    f: (v: T, k: K) => R,
-  ): (self: Iter<T, K>) => Maybe<R>
+  <T, K, R>(pred: (v: T, k: K) => boolean, f: (v: T, k: K) => R): (self: Iter<T, K>) => Maybe<R>
 } = (pred, f) => self => {
   self.k()
   let val: Maybe<ReturnType<typeof f>>
@@ -257,9 +254,7 @@ export const toIter: {
     next() {
       let step = get()
       next()
-      return step
-        ? { done: false, value: step.v }
-        : { done: true, value: undefined }
+      return step ? { done: false, value: step.v } : { done: true, value: undefined }
     },
     [Symbol.iterator]() {
       return this

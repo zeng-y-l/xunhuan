@@ -1,14 +1,6 @@
 // biome-ignore lint/correctness/noUnusedImports: for jsdoc link
 import type * as X from '.'
-import {
-  Iter,
-  type KeyOf,
-  type Maybe,
-  type ValOf,
-  type Yield,
-  type YieldOf,
-  cInit,
-} from './base'
+import { Iter, type KeyOf, type Maybe, type ValOf, type Yield, type YieldOf, cInit } from './base'
 
 /**
  * 取迭代器的一段。长度不够则忽略。
@@ -273,10 +265,7 @@ export const mapK: {
  * @see {@linkcode X.mapK}
  */
 export const mapKV: {
-  <T, K, U, L>(
-    val: (v: T, k: K) => U,
-    key: (v: T, k: K) => L,
-  ): (self: Iter<T, K>) => Iter<U, L>
+  <T, K, U, L>(val: (v: T, k: K) => U, key: (v: T, k: K) => L): (self: Iter<T, K>) => Iter<U, L>
 } = (val, key) => self => {
   self.k()
   let { i: init, g: get, n: next, e: each, s: slice } = self
@@ -356,9 +345,7 @@ export const ofEntries: {
  * @see {@linkcode X.unless}
  */
 export const filter: {
-  <T, K, U extends T>(
-    pred: (v: T, k: K) => v is U,
-  ): (self: Iter<T, K>) => Iter<U, K>
+  <T, K, U extends T>(pred: (v: T, k: K) => v is U): (self: Iter<T, K>) => Iter<U, K>
   <T, K>(pred: (v: T, k: K) => boolean): (self: Iter<T, K>) => Iter<T, K>
 } =
   <T, K>(pred: (v: T, k: K) => boolean) =>
@@ -375,8 +362,7 @@ export const filter: {
     return new Iter(
       () => step,
       next_,
-      f =>
-        (!step || f(step.v, step.k)) && each((v, k) => !pred(v, k) || f(v, k)),
+      f => (!step || f(step.v, step.k)) && each((v, k) => !pred(v, k) || f(v, k)),
       cInit(init, () => {
         if (!step) next_()
       }),
@@ -470,9 +456,7 @@ export const skipWhile: {
  * @see {@linkcode X.skipWhile}
  */
 export const takeWhile: {
-  <T, K, U extends T>(
-    pred: (v: T, k: K) => v is U,
-  ): (self: Iter<T, K>) => Iter<U, K>
+  <T, K, U extends T>(pred: (v: T, k: K) => v is U): (self: Iter<T, K>) => Iter<U, K>
   <T, K>(pred: (v: T, k: K) => boolean): (self: Iter<T, K>) => Iter<T, K>
 } =
   <T, K>(pred: (v: T, k: K) => boolean) =>
@@ -552,10 +536,7 @@ export const flatMap: {
   return new Iter(
     () => step,
     next_,
-    f_ =>
-      (!step || f_(step.v, step.k)) &&
-      (!iter || iter.e(f_)) &&
-      each((v, k) => f(v, k).e(f_)),
+    f_ => (!step || f_(step.v, step.k)) && (!iter || iter.e(f_)) && each((v, k) => f(v, k).e(f_)),
     cInit(init, () => {
       if (iter) return
       nextIter()
@@ -730,9 +711,7 @@ export const zipByKV: {
       return ok
     },
     cInit(init1, init2),
-    slice1 &&
-      slice2 &&
-      ((from, to) => zipByKV(slice2(from, to), val, key)(slice1(from, to))),
+    slice1 && slice2 && ((from, to) => zipByKV(slice2(from, to), val, key)(slice1(from, to))),
   )
 }
 
@@ -766,9 +745,7 @@ type ZipAllFn<T, K, U, L, R> = (
  * @see {@linkcode X.zipAllByKV}
  */
 export const zipAll: {
-  <T, K, U>(
-    snd: Iter<U>,
-  ): (fst: Iter<Maybe<T>, Maybe<K>>) => Iter<[Maybe<T>, Maybe<U>], Maybe<K>>
+  <T, K, U>(snd: Iter<U>): (fst: Iter<Maybe<T>, Maybe<K>>) => Iter<[Maybe<T>, Maybe<U>], Maybe<K>>
 } = snd =>
   zipAllByKV(
     snd,
@@ -908,9 +885,7 @@ export const zipAllByKV: {
       )
     },
     cInit(init1, init2),
-    slice1 &&
-      slice2 &&
-      ((from, to) => zipAllByKV(slice2(from, to), val, key)(slice1(from, to))),
+    slice1 && slice2 && ((from, to) => zipAllByKV(slice2(from, to), val, key)(slice1(from, to))),
   )
 }
 
@@ -935,10 +910,7 @@ export const zipAllByKV: {
  * @see {@linkcode X.windowsByKV}
  */
 export const scan: {
-  <T, K, U>(
-    f: (acc: U, v: T, k: K) => U,
-    init: U,
-  ): (self: Iter<T, K>) => Iter<U, K>
+  <T, K, U>(f: (acc: U, v: T, k: K) => U, init: U): (self: Iter<T, K>) => Iter<U, K>
 } = (f, init) => self => {
   self.k()
   let { i: init_, g: get, n: next, e: each } = self
@@ -1041,14 +1013,8 @@ export const prepend: {
   )
 }
 
-type Arr<T, N extends number> = number extends N
-  ? T[]
-  : N extends N
-    ? _Arr<T, N, [T]>
-    : never
-type _Arr<T, N extends number, R extends T[]> = R['length'] extends N
-  ? R
-  : _Arr<T, N, [T, ...R]>
+type Arr<T, N extends number> = number extends N ? T[] : N extends N ? _Arr<T, N, [T]> : never
+type _Arr<T, N extends number, R extends T[]> = R['length'] extends N ? R : _Arr<T, N, [T, ...R]>
 
 /**
  * 切分为指定大小的数组。
@@ -1082,10 +1048,7 @@ type _Arr<T, N extends number, R extends T[]> = R['length'] extends N
  * @see {@linkcode X.splitBy}
  */
 export const chunk: {
-  <N extends number>(
-    n: N,
-    last: false,
-  ): <T, K>(self: Iter<T, K>) => Iter<Arr<T, N>, undefined>
+  <N extends number>(n: N, last: false): <T, K>(self: Iter<T, K>) => Iter<Arr<T, N>, undefined>
   (n: number, last?: boolean): <T, K>(self: Iter<T, K>) => Iter<T[], undefined>
 } =
   (n: number, last = true) =>
