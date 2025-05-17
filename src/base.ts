@@ -20,12 +20,21 @@ type CheckFns<T, Fs extends unknown[], Fs_ = Fs> = Fs extends []
     : never
 
 /**
+ * 长度固定、支持随机访问的迭代器。
+ *
+ * @see {X.Iter}
+ */
+export type IdxIter<T, K = unknown> = Iter<T, K, never>
+
+/**
  * 迭代器。惰性求值、不可变，支持无限长。
  *
  * 与 {@linkcode Iterator} 类似，但只支持发出值，不支持接收值和返回值。
  * 此外，还支持同时发出键和值，无需用元组等方式模拟键值对。若不关心键，留空类型参数 `K` 即可。
  *
  * 类不自带任何方法，所有操作迭代器的方法都是全局函数，请使用 {@linkcode Iter.c} 实现链式调用。
+ *
+ * 迭代器结束后就不会再生成值。
  *
  * 迭代器只能用一次，否则会报错，哪怕只获取了第一个值。这是为了防止内部状态错误。若需要更灵活的控制，可以用 {@linkcode X.toIter} 转换为原生迭代器。
  *
@@ -44,8 +53,10 @@ type CheckFns<T, Fs extends unknown[], Fs_ = Fs> = Fs extends []
  *   X.first(iter)
  * }).toThrow('used')
  * ```
+ *
+ * @see {X.IdxIter}
  */
-export class Iter<out T, out K = unknown> {
+export class Iter<out T, out K = unknown, out Index extends undefined = undefined> {
   /**
    * @internal
    * init
@@ -57,6 +68,8 @@ export class Iter<out T, out K = unknown> {
    * get
    *
    * 调用前，应调用过 {@linkcode i}。
+   *
+   * @returns 当前的一项。
    */
   declare readonly g: () => Maybe<Yield<T, K>>
 
@@ -73,6 +86,10 @@ export class Iter<out T, out K = unknown> {
    * each
    *
    * 调用后，不应再调用其他方法。
+   *
+   * @param f 函数。每个值调用一次。若停止，则返回 `false`。
+   *
+   * @returns 若是停止的，则返回 `false`。
    */
   declare readonly e: (f: (v: T, k: K) => boolean) => boolean
 
@@ -81,8 +98,35 @@ export class Iter<out T, out K = unknown> {
    * slice
    *
    * 调用后，不应再调用其他方法。
+   *
+   * @param from 自然数。
+   * @param to 自然数。不小于 `from`。
+   *
+   * @returns 迭代器。
    */
-  declare readonly s: Maybe<(from: number, to: number) => Iter<T, K>>
+  declare readonly s: ((from: number, to: number) => Iter<T, K, Index>) | Index
+
+  /**
+   * @internal
+   * length
+   *
+   * 调用前，应调用过 {@linkcode i}。
+   *
+   * @returns 长度。自然数或无穷大。
+   */
+  declare readonly l: (() => number) | Index
+
+  /**
+   * @internal
+   * index
+   *
+   * 调用前，应调用过 {@linkcode i}。
+   *
+   * @param i 自然数。
+   *
+   * @returns 所在项。
+   */
+  declare readonly d: ((i: number) => Maybe<Yield<T, K>>) | Index
 
   /**
    * @internal
@@ -97,14 +141,18 @@ export class Iter<out T, out K = unknown> {
     get: typeof this.g,
     next: typeof this.n,
     each: typeof this.e,
-    init?: typeof this.i,
-    slice?: typeof this.s,
+    init: typeof this.i,
+    slice: typeof this.s,
+    length: typeof this.l,
+    index: typeof this.d,
   ) {
     this.i = init
     this.g = get
     this.n = next
     this.e = each
     this.s = slice
+    this.l = length
+    this.d = index
 
     this.u = false
   }
@@ -138,6 +186,28 @@ export class Iter<out T, out K = unknown> {
     return f.reduce((v, f) => f(v), this)
   }
 }
+
+export const newIter = <T, K>(
+  get: Iter<T, K>['g'],
+  next: Iter<T, K>['n'],
+  each: Iter<T, K>['e'],
+  init?: Iter<T, K>['i'],
+  slice?: Iter<T, K>['s'],
+  length?: Iter<T, K>['l'],
+  index?: Iter<T, K>['d'],
+): Iter<T, K> => new Iter<T, K>(get, next, each, init, slice, length, index)
+
+export const newIdxIter: {
+  <T, K>(
+    get: IdxIter<T, K>['g'],
+    next: IdxIter<T, K>['n'],
+    each: IdxIter<T, K>['e'],
+    init: IdxIter<T, K>['i'],
+    slice: IdxIter<T, K>['s'],
+    length: IdxIter<T, K>['l'],
+    index: IdxIter<T, K>['d'],
+  ): IdxIter<T, K>
+} = newIter as any
 
 export const cInit = <B extends Maybe<() => void>>(a: Maybe<() => void>, b: B) => {
   if (!a) return b

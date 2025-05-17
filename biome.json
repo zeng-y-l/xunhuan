@@ -28,7 +28,8 @@
         "useSingleVarDeclarator": "off",
         "useShorthandFunctionType": "off",
         "useConst": "off",
-        "noNonNullAssertion": "off"
+        "noNonNullAssertion": "off",
+        "noParameterAssign": "off"
       },
       "suspicious": {
         "noExplicitAny": "off"

@@ -30,9 +30,9 @@ export const first: {
 /**
  * 获取最后一个值。
  *
- * 方法，返回输入迭代器的最后一个值。若空则返回 `undefined`。
+ * 方法，返回输入迭代器的最后一个值。若空则返回 `undefined`。迭代器不应无限长。
  *
- * TODO: 目前的时间复杂度始终是线性。
+ * 一般需要访问每个值。但许多迭代器（如 {@linkcode X.ofArr}）有优化，使时间复杂度与迭代器长度无关。
  *
  * @example
  * ```ts @import.meta.vitest
@@ -46,6 +46,13 @@ export const last: {
   <T>(self: Iter<T>): Maybe<T>
 } = self => {
   self.k()
+
+  if (self.d && self.l) {
+    self.i?.()
+    let len = self.l()
+    return len > 0 && len < Infinity ? self.d(len - 1)?.v : undefined
+  }
+
   let r: Maybe<ValOf<typeof self>>
   self.e(v => {
     r = v
@@ -340,7 +347,7 @@ export const fold1: {
  *
  * 方法，返回迭代器的长度。
  *
- * TODO: 目前的时间复杂度始终是线性。
+ * 一般需要访问每个值。但许多迭代器（如 {@linkcode X.ofArr}）有优化，使时间复杂度与迭代器长度无关。
  *
  * @example
  * ```ts @import.meta.vitest
@@ -352,7 +359,19 @@ export const fold1: {
  */
 export const count: {
   (self: Iter<unknown>): number
-} = /* @__PURE__ */ fold((a, _) => a + 1, 0)
+} = self => {
+  self.k()
+  if (self.l) {
+    self.i?.()
+    return self.l()
+  }
+  let len = 0
+  self.e((_v, _k) => {
+    len++
+    return true
+  })
+  return len
+}
 
 /**
  * 求和。

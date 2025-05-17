@@ -1,7 +1,7 @@
 // biome-ignore lint/correctness/noNodejsModules:
 import { Console } from 'node:console'
 import * as E from 'extra-iterable'
-import fc, { type Arbitrary } from 'fast-check'
+import fc from 'fast-check'
 import { Pattern as P, match } from 'ts-pattern'
 import { expect, test } from 'vitest'
 import * as X from '../src'
@@ -117,37 +117,41 @@ const take = (e: Iter): Iter => (forever(e) ? { t: 'slice', e, from: 0, to: 200 
 
 const arbKey = () => fc.oneof(fc.integer(), fc.string())
 
-const arbMapper = <T>(r: Arbitrary<T>) => fc.func(r).map<Mapper<T>>(f => (v, k) => f(v, k))
+const arbMapper = <T>(r: fc.Arbitrary<T>) => fc.func(r).map<Mapper<T>>(f => (v, k) => f(v, k))
 
-const arbZipper = <T>(r: Arbitrary<T>) =>
+const arbZipper = <T>(r: fc.Arbitrary<T>) =>
   fc.func(r).map<Zipper<T>>(f => (v1, k1, v2, k2) => f(v1, k1, v2, k2))
 
-const arbZipperAll = <T>(r: Arbitrary<T>) =>
+const arbZipperAll = <T>(r: fc.Arbitrary<T>) =>
   fc.func(r).map<ZipperAll<T>>(f => (v1, k1, v2, k2, c1, c2) => f(v1, k1, v2, k2, c1, c2))
 
 const arbFolder = fc.func(fc.integer()).map<Folder>(f => (acc, v, k) => f(acc, v, k))
 
+const arbCreateIter = fc.oneof<fc.Arbitrary<Iter>[]>(
+  fc.constant({ t: 'empty' }),
+  fc.tuple(fc.integer(), arbKey()).map(([v, k]) => ({ t: 'once', v, k })),
+  fc
+    .tuple(fc.integer(), fc.option(fc.nat()), arbKey())
+    .map(([v, n, k]) => ({ t: 'repeat', n: n ?? Infinity, v, k })),
+  fc.record({
+    t: fc.constantFrom('arr', 'iter'),
+    arr: fc.array(fc.integer()),
+  }),
+  fc
+    .array(fc.tuple(fc.string(), fc.integer()))
+    .map(e => ({ t: 'obj', obj: Object.fromEntries(e) })),
+  fc
+    .tuple(fc.integer(), fc.func(fc.integer()))
+    .map(([init, f]) => ({ t: 'succ', f: a => f(a), init })),
+  fc
+    .tuple(fc.integer(), fc.integer(), fc.integer())
+    .filter(([, b, step]) => b * step > 0)
+    .map(([from, b, step]) => ({ t: 'range', from, to: from + b, step })),
+)
+
 const _arbIter = fc.letrec<{ iter: Iter }>(tie => ({
-  iter: fc.oneof<Arbitrary<Iter>[]>(
-    fc.constant({ t: 'empty' }),
-    fc.tuple(fc.integer(), arbKey()).map(([v, k]) => ({ t: 'once', v, k })),
-    fc
-      .tuple(fc.integer(), fc.option(fc.nat()), arbKey())
-      .map(([v, n, k]) => ({ t: 'repeat', n: n ?? Infinity, v, k })),
-    fc.record({
-      t: fc.constantFrom('arr', 'iter'),
-      arr: fc.array(fc.integer()),
-    }),
-    fc
-      .array(fc.tuple(fc.string(), fc.integer()))
-      .map(e => ({ t: 'obj', obj: Object.fromEntries(e) })),
-    fc
-      .tuple(fc.integer(), fc.func(fc.integer()))
-      .map(([init, f]) => ({ t: 'succ', f: a => f(a), init })),
-    fc
-      .tuple(fc.integer(), fc.integer(), fc.integer())
-      .filter(([, b, step]) => b * step > 0)
-      .map(([from, b, step]) => ({ t: 'range', from, to: from + b, step })),
+  iter: fc.oneof<fc.MaybeWeightedArbitrary<Iter>[]>(
+    arbCreateIter,
     tie('iter').map(e => ({ t: 'enum', e })),
     fc.record({
       t: fc.constant('map'),
@@ -167,11 +171,14 @@ const _arbIter = fc.letrec<{ iter: Iter }>(tie => ({
     fc
       .tuple(tie('iter'), arbFolder, fc.integer())
       .map(([e, f, init]) => ({ t: 'scan', e, f, init })),
-    fc
-      .tuple(tie('iter'), fc.nat(50))
-      .chain(([e, to]) =>
-        fc.nat(to ?? 20).map(from => ({ t: 'slice', e, from, to: to ?? Infinity })),
-      ),
+    {
+      weight: 5,
+      arbitrary: fc
+        .tuple(tie('iter'), fc.nat(50))
+        .chain(([e, to]) =>
+          fc.nat(to ?? 20).map(from => ({ t: 'slice', e, from, to: to ?? Infinity })),
+        ),
+    },
     fc.tuple(tie('iter'), fc.nat(20)).map(([e, n]) => ({ t: 'skip', e, n })),
     fc.tuple(tie('iter'), tie('iter')).map(([e1, e2]) => ({ t: 'chain2', e1, e2 })),
     fc.record({
@@ -213,9 +220,10 @@ const _arbIter = fc.letrec<{ iter: Iter }>(tie => ({
 }))
 const arbIter = _arbIter.iter.map(take)
 
-const arbConsume = fc.oneof<Arbitrary<Consume>[]>(
+const arbConsume = fc.oneof<fc.Arbitrary<Consume>[]>(
   fc.constant({ t: 'iter' }),
-  fc.constantFrom('arr', 'obj', 'groupObj', 'first', 'last', 'count').map(t => ({ t })),
+  fc.constantFrom('arr', 'obj', 'groupObj', 'first').map(t => ({ t })),
+  fc.constantFrom('last', 'count').map(t => ({ t })),
   fc.record({
     t: fc.constantFrom('all', 'any', 'find'),
     f: arbMapper(fc.boolean()),

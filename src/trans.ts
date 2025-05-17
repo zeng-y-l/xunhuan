@@ -1,6 +1,15 @@
 // biome-ignore lint/correctness/noUnusedImports: for jsdoc link
 import type * as X from '.'
-import { Iter, type KeyOf, type Maybe, type ValOf, type Yield, type YieldOf, cInit } from './base'
+import {
+  Iter,
+  type KeyOf,
+  type Maybe,
+  type ValOf,
+  type Yield,
+  type YieldOf,
+  cInit,
+  newIter,
+} from './base'
 
 /**
  * 取迭代器的一段。长度不够则忽略。
@@ -8,7 +17,7 @@ import { Iter, type KeyOf, type Maybe, type ValOf, type Yield, type YieldOf, cIn
  * 一般需要一个个访问开头被跳过的值。但许多迭代器（如 {@linkcode X.ofArr}）有优化，使时间复杂度与 `from` 无关。
  *
  * @param from 自然数。取的第一个值所在位置。
- * @param to 自然数。要取到的位置（不含）。
+ * @param to 自然数或无穷大。要取到的位置（不含）。
  *
  * @example
  * ```ts @import.meta.vitest
@@ -31,13 +40,16 @@ import { Iter, type KeyOf, type Maybe, type ValOf, type Yield, type YieldOf, cIn
  * @see {@linkcode X.skip}
  */
 export const slice: {
-  (from: number, to: number): <T, K>(self: Iter<T, K>) => Iter<T, K>
+  (
+    from: number,
+    to: number,
+  ): <T, K, Index extends undefined>(self: Iter<T, K, Index>) => Iter<T, K, Index>
 } = (from, to) => self => {
   self.k()
   let { i: init, g: get, n: next, e: each, s: slice_ } = self
   if (slice_) return slice_(from, to)
   let i = 0
-  return new Iter(
+  return newIter(
     () => (i < to ? get() : undefined),
     () => {
       i++
@@ -64,7 +76,7 @@ export const slice: {
       self.u = false
       return slice(from_ + remains, Math.min(to - i, to_ + remains))(self)
     },
-  )
+  ) as typeof self
 }
 
 /**
@@ -91,7 +103,7 @@ export const slice: {
  * @see {@linkcode X.takeWhile}
  */
 export const take: {
-  (n: number): <T, K>(self: Iter<T, K>) => Iter<T, K>
+  (n: number): <T, K, Index extends undefined>(self: Iter<T, K, Index>) => Iter<T, K, Index>
 } = n => slice(0, n)
 
 /**
@@ -122,7 +134,7 @@ export const take: {
  * @see {@linkcode X.skipWhile}
  */
 export const skip: {
-  (n: number): <T, K>(self: Iter<T, K>) => Iter<T, K>
+  (n: number): <T, K, Index extends undefined>(self: Iter<T, K, Index>) => Iter<T, K, Index>
 } = n => self => {
   self.k()
   let { i: init, g: get, n: next, e: each, s: slice } = self
@@ -134,7 +146,7 @@ export const skip: {
       if (!get()) break
     }
   })
-  return new Iter(
+  return newIter(
     get,
     next,
     f => {
@@ -142,7 +154,7 @@ export const skip: {
       return each(f)
     },
     init_,
-  )
+  ) as typeof self
 }
 
 /**
@@ -173,17 +185,20 @@ export const skip: {
  * @see {@linkcode X.zipK}
  */
 export const enume: {
-  <T>(self: Iter<T>): Iter<T, number>
+  <T, Index extends undefined>(self: Iter<T, unknown, Index>): Iter<T, number, Index>
 } = self => _enume(self, 0)
 
-let _enume = <T>(self: Iter<T>, from: number): Iter<T, number> => {
+let _enume = <T, Index extends undefined>(
+  self: Iter<T, unknown, Index>,
+  from: number,
+): Iter<T, number, Index> => {
   self.k()
-  let { i: init, g: get, n: next, e: each, s: slice } = self
+  let { i: init, g: get, n: next, e: each, s: slice, l: length, d: index } = self
   let i = from
   return new Iter(
     () => {
-      let step = get()
-      return step && { v: step.v, k: i }
+      let s = get()
+      return s && { v: s.v, k: i }
     },
     () => {
       i++
@@ -192,6 +207,12 @@ let _enume = <T>(self: Iter<T>, from: number): Iter<T, number> => {
     f => each(v => f(v, i++)),
     init,
     slice && ((from, to) => _enume(slice(from, to), i + from)),
+    length,
+    index &&
+      (i_ => {
+        let s = index(i_)
+        return s && { v: s.v, k: i + i_ }
+      }),
   )
 }
 
@@ -215,7 +236,9 @@ let _enume = <T>(self: Iter<T>, from: number): Iter<T, number> => {
  * @see {@linkcode X.mapKV}
  */
 export const map: {
-  <T, K, U>(f: (v: T, k: K) => U): (self: Iter<T, K>) => Iter<U, K>
+  <T, K, U>(
+    f: (v: T, k: K) => U,
+  ): <Index extends undefined>(self: Iter<T, K, Index>) => Iter<U, K, Index>
 } = f => mapKV(f, (_, k) => k)
 
 /**
@@ -239,7 +262,9 @@ export const map: {
  * @see {@linkcode X.mapKV}
  */
 export const mapK: {
-  <T, K, L>(key: (v: T, k: K) => L): (self: Iter<T, K>) => Iter<T, L>
+  <T, K, L>(
+    key: (v: T, k: K) => L,
+  ): <Index extends undefined>(self: Iter<T, K, Index>) => Iter<T, L, Index>
 } = key => mapKV((v, _) => v, key)
 
 /**
@@ -265,10 +290,13 @@ export const mapK: {
  * @see {@linkcode X.mapK}
  */
 export const mapKV: {
-  <T, K, U, L>(val: (v: T, k: K) => U, key: (v: T, k: K) => L): (self: Iter<T, K>) => Iter<U, L>
+  <T, K, U, L>(
+    val: (v: T, k: K) => U,
+    key: (v: T, k: K) => L,
+  ): <Index extends undefined>(self: Iter<T, K, Index>) => Iter<U, L, Index>
 } = (val, key) => self => {
   self.k()
-  let { i: init, g: get, n: next, e: each, s: slice } = self
+  let { i: init, g: get, n: next, e: each, s: slice, l: length, d: index } = self
   return new Iter(
     () => {
       let s = get()
@@ -277,7 +305,13 @@ export const mapKV: {
     next,
     f => each((v, k) => f(val(v, k), key(v, k))),
     init,
-    slice && ((from, to) => mapKV(val, key)(slice(from, to))),
+    slice && ((from, to) => slice(from, to).c(mapKV(val, key))),
+    length,
+    index &&
+      (i => {
+        let s = index(i)
+        return s && { v: val(s.v, s.k), k: key(s.v, s.k) }
+      }),
   )
 }
 
@@ -295,7 +329,7 @@ export const mapKV: {
  * @see {@linkcode X.toObj}
  */
 export const toEntries: {
-  <T, K>(self: Iter<T, K>): Iter<[K, T], K>
+  <T, K, Index extends undefined>(self: Iter<T, K, Index>): Iter<[K, T], K, Index>
 } = /* @__PURE__ */ mapKV(
   (v, k) => [k, v],
   (_v, k) => k,
@@ -321,7 +355,7 @@ export const toEntries: {
  * @see {@linkcode X.ofObj}
  */
 export const ofEntries: {
-  <K, V>(self: Iter<[K, V]>): Iter<V, K>
+  <K, V, Index extends undefined>(self: Iter<[K, V], unknown, Index>): Iter<V, K, Index>
 } = /* @__PURE__ */ mapKV(
   (v, _k) => v[1],
   (v, _k) => v[0],
@@ -359,7 +393,7 @@ export const filter: {
         next()
       } while (step && !pred(step.v, step.k))
     }
-    return new Iter(
+    return newIter(
       () => step,
       next_,
       f => (!step || f(step.v, step.k)) && each((v, k) => !pred(v, k) || f(v, k)),
@@ -414,7 +448,7 @@ export const skipWhile: {
   self.k()
   let { i: init, g: get, n: next, e: each } = self
   let flag = true
-  return new Iter(
+  return newIter(
     get,
     next,
     f =>
@@ -464,7 +498,7 @@ export const takeWhile: {
     self.k()
     let { i: init, g: get, n: next, e: each } = self
     let step: Maybe<Yield<T, K>>
-    return new Iter(
+    return newIter(
       () => step,
       () => {
         if (!step) return
@@ -533,7 +567,7 @@ export const flatMap: {
       nextIter()
     }
   }
-  return new Iter(
+  return newIter(
     () => step,
     next_,
     f_ => (!step || f_(step.v, step.k)) && (!iter || iter.e(f_)) && each((v, k) => f(v, k).e(f_)),
@@ -585,7 +619,9 @@ export const flatten: {
  * @see {@linkcode X.zipByKV}
  */
 export const zip: {
-  <T, K, U>(snd: Iter<U>): (fst: Iter<T, K>) => Iter<[T, U], K>
+  <T, K, U, Index extends undefined>(
+    snd: Iter<U, unknown, Index>,
+  ): <Index2 extends undefined>(fst: Iter<T, K, Index2>) => Iter<[T, U], K, Index | Index2>
 } = snd =>
   zipByKV(
     snd,
@@ -614,7 +650,9 @@ export const zip: {
  * @see {@linkcode X.zipByKV}
  */
 export const zipK: {
-  <T, U>(snd: Iter<U>): (fst: Iter<T>) => Iter<T, U>
+  <T, U, Index extends undefined>(
+    snd: Iter<U, unknown, Index>,
+  ): <Index2 extends undefined>(fst: Iter<T, unknown, Index2>) => Iter<T, U, Index | Index2>
 } = snd =>
   zipByKV(
     snd,
@@ -644,10 +682,10 @@ export const zipK: {
  * @see {@linkcode X.zipByKV}
  */
 export const zipBy: {
-  <T, K, U, L, V>(
-    snd: Iter<U, L>,
+  <T, K, U, L, V, Index extends undefined>(
+    snd: Iter<U, L, Index>,
     f: (v1: T, k1: K, v2: U, k2: L) => V,
-  ): (fst: Iter<T, K>) => Iter<V, K>
+  ): <Index2 extends undefined>(fst: Iter<T, K, Index2>) => Iter<V, K, Index | Index2>
 } = (snd, f) => zipByKV(snd, f, (_v1, k1, _v2, _k2) => k1)
 
 /**
@@ -677,16 +715,16 @@ export const zipBy: {
  * @see {@linkcode X.zipByKV}
  */
 export const zipByKV: {
-  <T, K, U, L, V, M>(
-    snd: Iter<U, L>,
+  <T, K, U, L, V, M, Index extends undefined>(
+    snd: Iter<U, L, Index>,
     val: (v1: T, k1: K, v2: U, k2: L) => V,
     key: (v1: T, k1: K, v2: U, k2: L) => M,
-  ): (fst: Iter<T, K>) => Iter<V, M>
+  ): <Index2 extends undefined>(fst: Iter<T, K, Index2>) => Iter<V, M, Index | Index2>
 } = (snd, val, key) => fst => {
   fst.k()
   snd.k()
-  let { i: init1, g: get1, n: next1, e: each1, s: slice1 } = fst
-  let { i: init2, g: get2, n: next2, s: slice2 } = snd
+  let { i: init1, g: get1, n: next1, e: each1, s: slice1, l: length1, d: index1 } = fst
+  let { i: init2, g: get2, n: next2, s: slice2, l: length2, d: index2 } = snd
   return new Iter(
     () => {
       let a = get1()
@@ -712,6 +750,15 @@ export const zipByKV: {
     },
     cInit(init1, init2),
     slice1 && slice2 && ((from, to) => zipByKV(slice2(from, to), val, key)(slice1(from, to))),
+    length1 && length2 && (() => Math.min(length1(), length2())),
+    index1 &&
+      index2 &&
+      (i => {
+        let a = index1(i)
+        let b = index2(i)
+        if (!a || !b) return
+        return { v: val(a.v, a.k, b.v, b.k), k: key(a.v, a.k, b.v, b.k) }
+      }),
   )
 }
 
@@ -745,7 +792,11 @@ type ZipAllFn<T, K, U, L, R> = (
  * @see {@linkcode X.zipAllByKV}
  */
 export const zipAll: {
-  <T, K, U>(snd: Iter<U>): (fst: Iter<Maybe<T>, Maybe<K>>) => Iter<[Maybe<T>, Maybe<U>], Maybe<K>>
+  <T, K, U, Index extends undefined>(
+    snd: Iter<U, unknown, Index>,
+  ): <Index2 extends undefined>(
+    fst: Iter<Maybe<T>, Maybe<K>, Index2>,
+  ) => Iter<[Maybe<T>, Maybe<U>], Maybe<K>, Index | Index2>
 } = snd =>
   zipAllByKV(
     snd,
@@ -774,7 +825,11 @@ export const zipAll: {
  * @see {@linkcode X.zipAllByKV}
  */
 export const zipAllK: {
-  <T, U>(snd: Iter<U>): (fst: Iter<Maybe<T>>) => Iter<Maybe<T>, Maybe<U>>
+  <T, U, Index extends undefined>(
+    snd: Iter<U, unknown, Index>,
+  ): <Index2 extends undefined>(
+    fst: Iter<Maybe<T>, unknown, Index2>,
+  ) => Iter<Maybe<T>, Maybe<U>, Index | Index2>
 } = snd =>
   zipAllByKV(
     snd,
@@ -802,10 +857,12 @@ export const zipAllK: {
  * @see {@linkcode X.zipAllByKV}
  */
 export const zipAllBy: {
-  <T, K, U, L, V>(
-    snd: Iter<U, L>,
+  <T, K, U, L, V, Index extends undefined>(
+    snd: Iter<U, L, Index>,
     f: ZipAllFn<T, K, U, L, V>,
-  ): (fst: Iter<Maybe<T>, Maybe<K>>) => Iter<V, Maybe<K>>
+  ): <Index2 extends undefined>(
+    fst: Iter<Maybe<T>, Maybe<K>, Index2>,
+  ) => Iter<V, Maybe<K>, Index | Index2>
 } = (snd, f) => zipAllByKV(snd, f, (_v1, k1, _v2, _k2, _c1, _c2) => k1)
 
 /**
@@ -835,16 +892,16 @@ export const zipAllBy: {
  * @see {@linkcode X.zipAllByKV}
  */
 export const zipAllByKV: {
-  <T, K, U, L, V, M>(
-    snd: Iter<U, L>,
+  <T, K, U, L, V, M, Index extends undefined>(
+    snd: Iter<U, L, Index>,
     val: ZipAllFn<T, K, U, L, V>,
     key: ZipAllFn<T, K, U, L, M>,
-  ): (fst: Iter<Maybe<T>, Maybe<K>>) => Iter<V, M>
+  ): <Index2 extends undefined>(fst: Iter<Maybe<T>, Maybe<K>, Index2>) => Iter<V, M, Index | Index2>
 } = (snd, val, key) => fst => {
   fst.k()
   snd.k()
-  let { i: init1, g: get1, n: next1, e: each1, s: slice1 } = fst
-  let { i: init2, g: get2, n: next2, e: each2, s: slice2 } = snd
+  let { i: init1, g: get1, n: next1, e: each1, s: slice1, l: length1, d: index1 } = fst
+  let { i: init2, g: get2, n: next2, e: each2, s: slice2, l: length2, d: index2 } = snd
   return new Iter(
     () => {
       let a = get1()
@@ -886,6 +943,18 @@ export const zipAllByKV: {
     },
     cInit(init1, init2),
     slice1 && slice2 && ((from, to) => zipAllByKV(slice2(from, to), val, key)(slice1(from, to))),
+    length1 && length2 && (() => Math.max(length1(), length2())),
+    index1 &&
+      index2 &&
+      (i => {
+        let a = index1(i)
+        let b = index2(i)
+        if (!a && !b) return
+        return {
+          v: val(a?.v, a?.k, b?.v, b?.k, !!a, !!b),
+          k: key(a?.v, a?.k, b?.v, b?.k, !!a, !!b),
+        }
+      }),
   )
 }
 
@@ -923,7 +992,7 @@ export const scan: {
     done = !s
     step = s && { v: f(step.v, s.v, s.k), k: s.k }
   }
-  return new Iter(
+  return newIter(
     () => step,
     next_,
     f_ => {
@@ -965,7 +1034,9 @@ export const scan: {
  * @see {@linkcode X.prepend}
  */
 export const append: {
-  <T, K>(snd: Iter<T, K>): (fst: Iter<T, K>) => Iter<T, K>
+  <T, K, Index extends undefined>(
+    snd: Iter<T, K, Index>,
+  ): (fst: Iter<T, K, Index>) => Iter<T, K, Index>
 } = snd => fst => prepend(fst)(snd)
 
 /**
@@ -986,12 +1057,14 @@ export const append: {
  * @see {@linkcode X.append}
  */
 export const prepend: {
-  <T, K>(fst: Iter<T, K>): (snd: Iter<T, K>) => Iter<T, K>
+  <T, K, Index extends undefined>(
+    fst: Iter<T, K, Index>,
+  ): (snd: Iter<T, K, Index>) => Iter<T, K, Index>
 } = fst => snd => {
   fst.k()
   snd.k()
-  let { i: init1, g: get1, n: next1, e: each1 } = fst
-  let { i: init2, g: get2, n: next2, e: each2 } = snd
+  let { i: init1, g: get1, n: next1, e: each1, s: slice1, l: length1, d: index1 } = fst
+  let { i: init2, g: get2, n: next2, e: each2, s: slice2, l: length2, d: index2 } = snd
   let done1 = false
   let step1: Maybe<YieldOf<typeof fst>>
   return new Iter(
@@ -1010,6 +1083,25 @@ export const prepend: {
       step1 = get1()
       if (!step1) done1 = true
     }),
+    slice1 &&
+      slice2 &&
+      length1 &&
+      ((from, to) => {
+        init1?.()
+        let l1 = length1()
+        if (l1 < from) return slice2(from - l1, to - l1)
+        if (l1 > to) return slice1(from, to)
+        return prepend(slice1(from, Infinity))(slice2(0, to - l1))
+      }),
+    length1 && length2 && (() => length1() + length2()),
+    index1 &&
+      index2 &&
+      length1 &&
+      (i => {
+        let l1 = length1()
+        if (i < l1) return index1(i)
+        return index2(i - l1)
+      }),
   )
 }
 
@@ -1048,53 +1140,88 @@ type _Arr<T, N extends number, R extends T[]> = R['length'] extends N ? R : _Arr
  * @see {@linkcode X.splitBy}
  */
 export const chunk: {
-  <N extends number>(n: N, last: false): <T, K>(self: Iter<T, K>) => Iter<Arr<T, N>, undefined>
-  (n: number, last?: boolean): <T, K>(self: Iter<T, K>) => Iter<T[], undefined>
+  <N extends number>(
+    n: N,
+    last: false,
+  ): <T, K, Index extends undefined>(self: Iter<T, K, Index>) => Iter<Arr<T, N>, undefined, Index>
+  (
+    n: number,
+    last?: boolean,
+  ): <T, K, Index extends undefined>(self: Iter<T, K, Index>) => Iter<T[], undefined, Index>
 } =
   (n: number, last = true) =>
-  <T, K>(self: Iter<T, K>) => {
-    self.k()
-    let { i: init, g: get, n: next, e: each, s: slice } = self
-    let step: Maybe<Yield<T[], undefined>>
-    let next_ = () => {
-      let arr = []
-      while (arr.length < n) {
-        let s = get()
-        if (!s) {
-          if (arr.length === 0 || !last) {
-            step = undefined
-            return
-          }
-          break
+  <T, K, Index extends undefined>(self: Iter<T, K, Index>) =>
+    chunk_(n, last, self, undefined)
+
+const chunk_ = <T, K, Index extends undefined>(
+  n: number,
+  last: boolean,
+  self: Iter<T, K, Index>,
+  step: Maybe<Yield<T[], undefined>>,
+): Iter<T[], undefined, Index> => {
+  self.k()
+  let { i: init, g: get, n: next, e: each, s: slice, l: length, d: index } = self
+  let next_ = () => {
+    let arr = []
+    while (arr.length < n) {
+      let s = get()
+      if (!s) {
+        if (arr.length === 0 || !last) {
+          step = undefined
+          return
         }
-        arr.push(s.v)
-        next()
+        break
       }
-      step = { v: arr, k: undefined }
+      arr.push(s.v)
+      next()
     }
-    return new Iter(
-      () => step,
-      next_,
-      f => {
-        let arr: T[] = []
-        return (
-          (!step || f(step.v, step.k)) &&
-          each((v, _k) => {
-            arr.push(v)
-            if (arr.length < n) return true
-            let r = f(arr, undefined)
-            arr = []
-            return r
-          }) &&
-          (!last || arr.length === 0 || f(arr, undefined))
-        )
-      },
-      cInit(init, () => {
-        if (!step) next_()
-      }),
-      slice && ((from, to) => chunk(n, last)(slice(from * n, to * n))),
-    )
+    step = { v: arr, k: undefined }
   }
+  return new Iter(
+    () => step,
+    next_,
+    f => {
+      let arr: T[] = []
+      return (
+        (!step || f(step.v, step.k)) &&
+        each((v, _k) => {
+          arr.push(v)
+          if (arr.length < n) return true
+          let r = f(arr, undefined)
+          arr = []
+          return r
+        }) &&
+        (!last || arr.length === 0 || f(arr, undefined))
+      )
+    },
+    cInit(init, () => {
+      if (!step) next_()
+    }),
+    slice &&
+      ((from, to) => {
+        let step_ = from < 1 && to > 0 ? step : undefined
+        let self_ = slice(Math.max(0, from - +!!step) * n, Math.max(0, to - +!!step) * n)
+        return chunk_(n, last, self_, step_)
+      }),
+    length && (() => +!!step + (last ? Math.ceil(length() / n) : Math.floor(length() / n))),
+    index &&
+      (i => {
+        if (i === 0) return step
+        let arr = []
+        for (let j = (i - 1) * n; arr.length < n; j++) {
+          let s = index(j)
+          if (!s) {
+            if (arr.length === 0 || !last) {
+              return
+            }
+            break
+          }
+          arr.push(s.v)
+        }
+        return { v: arr, k: undefined }
+      }),
+  )
+}
 
 /**
  * 在满足条件的位置切分为数组。
@@ -1171,7 +1298,7 @@ export const splitBy: {
       }
       step = { v: arr, k: undefined }
     }
-    return new Iter(
+    return newIter(
       () => step,
       next_,
       f => {
@@ -1225,14 +1352,23 @@ export const windowsByKV: {
   <T, K, U, L>(
     val: (v1: T, k1: K, v2: T, k2: K) => U,
     key: (v1: T, k1: K, v2: T, k2: K) => L,
-  ): (self: Iter<T, K>) => Iter<U, L>
-} = (val, key) => self => {
+  ): <Index extends undefined>(self: Iter<T, K, Index>) => Iter<U, L, Index>
+} = (val, key) => self =>
+  windowsByKV_(val, key, self, false, undefined, undefined, undefined, undefined, undefined)
+
+export const windowsByKV_ = <T, K, U, L, Index extends undefined>(
+  val: (v1: T, k1: K, v2: T, k2: K) => U,
+  key: (v1: T, k1: K, v2: T, k2: K) => L,
+  self: Iter<T, K, Index>,
+  done: boolean,
+  v1: Maybe<T>,
+  k1: Maybe<K>,
+  v2: Maybe<T>,
+  k2: Maybe<K>,
+  step: Maybe<Yield<U, L>>,
+): Iter<U, L, Index> => {
   self.k()
-  let { i: init, g: get, n: next, e: each } = self
-  let v1: Maybe<ValOf<typeof self>>, k1: Maybe<KeyOf<typeof self>>
-  let v2: typeof v1, k2: typeof k1
-  let done = false
-  let step: Maybe<Yield<ReturnType<typeof val>, ReturnType<typeof key>>>
+  let { i: init, g: get, n: next, e: each, s: slice, l: length, d: index } = self
 
   let init_ = cInit(init, () => {
     if (step || done) return
@@ -1281,6 +1417,29 @@ export const windowsByKV: {
       })
     },
     init_,
+    slice &&
+      index &&
+      ((from, to) => {
+        if (!step) return windowsByKV(val, key)(slice(from, to + 1))
+        if (from === 0) {
+          return windowsByKV_(val, key, slice(0, to), done, v1, k1, v2, k2, step)
+        }
+        return windowsByKV(val, key)(slice(from - 1, to))
+      }),
+    length && (() => length() - +!step + +done),
+    index &&
+      (i => {
+        if (i === 0) return step
+        let s1 = index(i - 1)
+        let s2 = index(i)
+        return (
+          s1 &&
+          s2 && {
+            v: val(s1.v, s1.k, s2.v, s2.k),
+            k: key(s1.v, s1.k, s2.v, s2.k),
+          }
+        )
+      }),
   )
 }
 
@@ -1300,7 +1459,7 @@ export const windowsByKV: {
  * @see {@linkcode X.windowsByKV}
  */
 export const pop: {
-  <T, K>(self: Iter<T, K>): Iter<T, K>
+  <T, K, Index extends undefined>(self: Iter<T, K, Index>): Iter<T, K, Index>
 } = /* @__PURE__ */ windowsByKV(
   (v1, _k1, _v2, _k2) => v1,
   (_v1, k1, _v2, _k2) => k1,

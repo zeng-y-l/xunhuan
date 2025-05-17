@@ -1,6 +1,6 @@
 // biome-ignore lint/correctness/noUnusedImports: for jsdoc link
 import type * as X from '.'
-import { Iter, type Maybe, type Yield } from './base'
+import { type IdxIter, type Iter, type Maybe, type Yield, newIdxIter, newIter } from './base'
 import { flatten, prepend } from './trans'
 
 /**
@@ -24,12 +24,12 @@ import { flatten, prepend } from './trans'
  * @see {@linkcode X.toArr}
  */
 export const ofArr: {
-  <T>(arr: ArrayLike<T>): Iter<T, number>
+  <T>(arr: ArrayLike<T>): IdxIter<T, number>
 } = arr => _ofArr(arr, 0, arr.length)
 
-const _ofArr = <T>(arr: ArrayLike<T>, from: number, to: number): Iter<T, number> => {
+const _ofArr = <T>(arr: ArrayLike<T>, from: number, to: number): IdxIter<T, number> => {
   let i = from
-  return new Iter(
+  return newIdxIter(
     () => (i < to ? { v: arr[i], k: i } : undefined),
     () => i++,
     f => {
@@ -40,6 +40,8 @@ const _ofArr = <T>(arr: ArrayLike<T>, from: number, to: number): Iter<T, number>
     },
     undefined,
     (from, to_) => _ofArr(arr, i + from, Math.min(to, i + to_)),
+    () => Math.max(0, to - i),
+    i_ => (i + i_ < to ? { v: arr[i + i_], k: i + i_ } : undefined),
   )
 }
 
@@ -77,7 +79,7 @@ export const ofIter: {
         : (iter as Iterator<T>)
     next()
   }
-  return new Iter(
+  return newIter(
     () => step,
     next,
     f => {
@@ -120,13 +122,13 @@ export const ofIter: {
  * ```
  */
 export const range: {
-  (to?: number): Iter<number, undefined>
-  (from: number, to: number, step?: number): Iter<number, undefined>
+  (to?: number): IdxIter<number, undefined>
+  (from: number, to: number, step?: number): IdxIter<number, undefined>
 } = (a = Infinity, b?: number, c?: number) => {
   let x = b != null ? a : 0
   let to = b ?? a
   let step = c ?? (x < to ? 1 : -1)
-  return new Iter(
+  return newIdxIter(
     () => (step * (to - x) > 0 ? { v: x, k: undefined } : undefined),
     () => {
       x += step
@@ -143,6 +145,8 @@ export const range: {
       to1 = step > 0 ? Math.min(to1, to) : Math.max(to1, to)
       return range(x + from * step, to1, step)
     },
+    () => (step * (to - x) > 0 ? Math.ceil((to - x) / step) : 0),
+    i => (step * (to - x - i * step) > 0 ? { v: x + i * step, k: undefined } : undefined),
   )
 }
 
@@ -155,14 +159,16 @@ export const range: {
  * ```
  */
 export const empty: {
-  (): Iter<never, never>
+  (): IdxIter<never, never>
 } = () =>
-  new Iter(
+  newIdxIter(
     () => undefined,
     () => {},
-    () => true,
+    _ => true,
     undefined,
     () => empty(),
+    () => 0,
+    _ => undefined,
   )
 
 /**
@@ -180,7 +186,7 @@ export const empty: {
  * @see {@linkcode X.onceKV}
  */
 export const once: {
-  <T>(v: T): Iter<T, undefined>
+  <T>(v: T): IdxIter<T, undefined>
 } = v => onceKV(v, undefined)
 
 /**
@@ -203,10 +209,10 @@ export const once: {
  * @see {@linkcode X.repeat}
  */
 export const onceKV: {
-  <T, K>(v: T, k: K): Iter<T, K>
+  <T, K>(v: T, k: K): IdxIter<T, K>
 } = (v, k) => {
   let done = false
-  return new Iter(
+  return newIdxIter(
     () => (done ? undefined : { v, k }),
     () => {
       done = true
@@ -214,6 +220,8 @@ export const onceKV: {
     f_ => done || f_(v, k),
     undefined,
     (from, to) => (done || from > 0 || to < 1 ? empty() : onceKV(v, k)),
+    () => 1 - +done,
+    i => (i === 0 && !done ? { v, k } : undefined),
   )
 }
 
@@ -237,7 +245,7 @@ export const onceKV: {
  * @see {@linkcode X.repeatKV}
  */
 export const repeat: {
-  <T>(v: T, n?: number): Iter<T, undefined>
+  <T>(v: T, n?: number): IdxIter<T, undefined>
 } = (v, n = Infinity) => repeatKV(v, undefined, n)
 
 /**
@@ -245,7 +253,7 @@ export const repeat: {
  *
  * @param v 值。
  * @param k 键。
- * @param n 重复的次数。默认为 `Infinity`。
+ * @param n 自然数或无穷大。重复的次数。默认为 `Infinity`。
  *
  * @returns 迭代器，值为 `v`，键为 `k`，长度为 `n`。
  *
@@ -267,11 +275,11 @@ export const repeat: {
  * @see {@linkcode X.empty}
  */
 export const repeatKV: {
-  <T, K>(v: T, k: K, n?: number): Iter<T, K>
+  <T, K>(v: T, k: K, n?: number): IdxIter<T, K>
 } = (v, k, n = Infinity) => {
   let i = 0
   let step = { v, k }
-  return new Iter(
+  return newIdxIter(
     () => (i < n ? step : undefined),
     () => {
       i++
@@ -282,6 +290,8 @@ export const repeatKV: {
     },
     undefined,
     (from, to) => repeatKV(v, k, Math.min(to, n - i) - from),
+    () => Math.max(0, n - i),
+    i_ => (i + i_ < n ? step : undefined),
   )
 }
 
@@ -307,7 +317,7 @@ export const succ: {
   <T>(f: (prev: T) => T, init: T): Iter<T, undefined>
 } = (f, init) => {
   let v = init
-  return new Iter(
+  return newIter(
     () => ({ v, k: undefined }),
     () => {
       v = f(v)
@@ -370,25 +380,23 @@ export const concat: {
  * @see {@linkcode X.ofEntries}
  */
 export const ofObj: {
-  <T>(obj: Record<string, T> | ArrayLike<T>): Iter<T, string>
-  (obj: object): Iter<unknown, string>
+  <T>(obj: Record<string, T> | ArrayLike<T>): IdxIter<T, string>
+  (obj: object): IdxIter<unknown, string>
 } = <T>(obj: Record<string, T>) => _ofObj(obj, undefined, 0, undefined)
 
 const _ofObj = <T>(
   obj: Record<string, T>,
-  keys_: Maybe<string[]>,
+  keys: Maybe<string[]>,
   from: number,
-  to_: Maybe<number>,
-): Iter<T, string> => {
-  let keys = keys_
-  let to = to_
+  to: Maybe<number>,
+): IdxIter<T, string> => {
   let i = from
   let init = () => {
     if (keys) return
     keys = Object.keys(obj)
     to = keys.length
   }
-  return new Iter(
+  return newIdxIter(
     () => (i < to! ? { v: obj[keys![i]], k: keys![i] } : undefined),
     () => i++,
     f => {
@@ -403,5 +411,7 @@ const _ofObj = <T>(
       init()
       return _ofObj(obj, keys, i + from, Math.min(to!, i + to_))
     },
+    () => Math.max(0, to! - i),
+    i_ => (i + i_ < to! ? { v: obj[keys![i + i_]], k: keys![i + i_] } : undefined),
   )
 }
