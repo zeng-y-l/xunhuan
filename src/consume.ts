@@ -14,6 +14,7 @@ import type { Iter, KeyOf, Maybe, ValOf } from './base'
  * ```
  *
  * @see {@linkcode X.last}
+ * @see {@linkcode X.current}
  */
 export const first: {
   <T>(self: Iter<T>): Maybe<T>
@@ -332,13 +333,12 @@ export const fold: {
 export const fold1: {
   <T, K>(f: (acc: T, v: T, k: K) => T): (self: Iter<T, K>) => Maybe<T>
 } = f => self => {
-  self.k()
+  self.k(false)
   let { i: init, g: get, n: next } = self
   init?.()
   let fst = get()
   if (!fst) return
   next()
-  self.u = false
   return fold(f, fst.v)(self)
 }
 
@@ -356,6 +356,7 @@ export const fold1: {
  * ```
  *
  * @see {@linkcode X.fold}
+ * @see {@linkcode X.length}
  */
 export const count: {
   (self: Iter<unknown>): number

@@ -77,6 +77,11 @@ type Iter =
       fv: (v1: number, k1: Key, v2: number, k2: Key) => number
       fk: (v1: number, k1: Key, v2: number, k2: Key) => Key
     }
+  | {
+      t: 'next'
+      e: Iter
+      n: number
+    }
 
 type Folder = (acc: number, v: number, k: Key) => number
 
@@ -87,6 +92,7 @@ type Consume =
     }
   | { t: 'fold'; f: Folder; init: number }
   | { t: 'fold1'; f: Folder }
+  | { t: 'next'; e: Consume; n: number }
 
 const forever = (e: Iter): boolean =>
   match(e)
@@ -104,6 +110,7 @@ const forever = (e: Iter): boolean =>
           'splitBy',
           'enum',
           'windows',
+          'next',
         ),
       },
       ({ e }) => forever(e),
@@ -179,7 +186,11 @@ const _arbIter = fc.letrec<{ iter: Iter }>(tie => ({
           fc.nat(to ?? 20).map(from => ({ t: 'slice', e, from, to: to ?? Infinity })),
         ),
     },
-    fc.tuple(tie('iter'), fc.nat(20)).map(([e, n]) => ({ t: 'skip', e, n })),
+    fc.record({
+      t: fc.constantFrom('skip', 'next'),
+      e: tie('iter'),
+      n: fc.nat(20),
+    }),
     fc.tuple(tie('iter'), tie('iter')).map(([e1, e2]) => ({ t: 'chain2', e1, e2 })),
     fc.record({
       t: fc.constant('zip2'),
@@ -220,20 +231,23 @@ const _arbIter = fc.letrec<{ iter: Iter }>(tie => ({
 }))
 const arbIter = _arbIter.iter.map(take)
 
-const arbConsume = fc.oneof<fc.Arbitrary<Consume>[]>(
-  fc.constant({ t: 'iter' }),
-  fc.constantFrom('arr', 'obj', 'groupObj', 'first').map(t => ({ t })),
-  fc.constantFrom('last', 'count').map(t => ({ t })),
-  fc.record({
-    t: fc.constantFrom('all', 'any', 'find'),
-    f: arbMapper(fc.boolean()),
-  }),
-  fc.record({
-    t: fc.constantFrom('fold', 'fold1'),
-    f: arbFolder,
-    init: fc.integer(),
-  }),
-)
+const { self: arbConsume } = fc.letrec<{ self: Consume }>(tie => ({
+  self: fc.oneof<fc.Arbitrary<Consume>[]>(
+    fc.constant({ t: 'iter' }),
+    fc.constantFrom('arr', 'obj', 'groupObj', 'first').map(t => ({ t })),
+    fc.constantFrom('last', 'count').map(t => ({ t })),
+    fc.record({
+      t: fc.constantFrom('all', 'any', 'find'),
+      f: arbMapper(fc.boolean()),
+    }),
+    fc.record({
+      t: fc.constantFrom('fold', 'fold1'),
+      f: arbFolder,
+      init: fc.integer(),
+    }),
+    fc.tuple(tie('self'), fc.nat(20)).map(([e, n]) => ({ t: 'next', e, n })),
+  ),
+}))
 
 const iterX = (e: Iter): X.Iter<number, Key> =>
   match<Iter, X.Iter<number, Key>>(e)
@@ -262,9 +276,15 @@ const iterX = (e: Iter): X.Iter<number, Key> =>
       iterX(e).c(X.splitBy(fp, inclusive, last), X.map(fm)),
     )
     .with({ t: 'windows' }, ({ e, fv, fk }) => iterX(e).c(X.windowsByKV(fv, fk)))
+    .with({ t: 'next' }, ({ e, n }) => {
+      const iter = iterX(e)
+      X.current(iter)
+      while (n--) X.moveNext(iter)
+      return iter
+    })
     .exhaustive()
 
-const consumeX = (e: Consume, i: X.Iter<number, Key>) =>
+const consumeX = (e: Consume, i: X.Iter<number, Key>): unknown =>
   match(e)
     .with({ t: 'arr' }, () => X.toArr(i))
     .with({ t: 'iter' }, () => Array.from(X.toIter(i)))
@@ -290,6 +310,14 @@ const consumeX = (e: Consume, i: X.Iter<number, Key>) =>
     .with({ t: 'find' }, ({ f }) => i.c(X.find(f)))
     .with({ t: 'fold' }, ({ f, init }) => i.c(X.fold(f, init)))
     .with({ t: 'fold1' }, ({ f }) => i.c(X.fold1(f)))
+    .with({ t: 'next' }, ({ e, n }) => {
+      const init: unknown[] = []
+      while (n--) {
+        init.push(X.current(i))
+        X.moveNext(i)
+      }
+      return [init, consumeX(e, i)]
+    })
     .exhaustive()
 
 const iterE = (e: Iter): Iterable<[number, Key]> =>
@@ -314,7 +342,7 @@ const iterE = (e: Iter): Iterable<[number, Key]> =>
     .with({ t: 'takeWhile' }, ({ e, f }) => E.takeWhile(iterE(e), ([v, k]) => f(v, k)))
     .with({ t: 'skipWhile' }, ({ e, f }) => E.dropWhile(iterE(e), ([v, k]) => f(v, k)))
     .with({ t: 'slice' }, ({ e, from, to }) => E.slice(iterE(e), from, to))
-    .with({ t: 'skip' }, ({ e, n }) => E.drop(iterE(e), n))
+    .with({ t: P.union('skip', 'next') }, ({ e, n }) => E.drop(iterE(e), n))
     .with({ t: 'chain2' }, ({ e1, e2 }) => E.concat(iterE(e1), iterE(e2)))
     .with({ t: 'zip2' }, ({ e1, e2, fv, fk }) =>
       E.map(E.zip([iterE(e1), iterE(e2)]), ([[v1, k1], [v2, k2]]) => [
@@ -360,8 +388,8 @@ const iterE = (e: Iter): Iterable<[number, Key]> =>
     )
     .exhaustive()
 
-const consumeE = (e: Consume, i: Iterable<[number, Key]>) =>
-  match(e)
+const consumeE = (e: Consume, i: Iterable<[number, Key]>): unknown =>
+  match<Consume, unknown>(e)
     .with({ t: P.union('arr', 'iter') }, () => Array.from(i, ([v]) => v))
     .with({ t: 'obj' }, () => Object.fromEntries(E.map(i, ([v, k]) => [String(k), v])))
     .with({ t: 'groupObj' }, () => {
@@ -386,6 +414,15 @@ const consumeE = (e: Consume, i: Iterable<[number, Key]>) =>
       { t: 'fold1' },
       ({ f }) => E.reduce<[number, Key], [number]>(i, ([acc], [v, k]) => [f(acc, v, k)])?.[0],
     )
+    .with({ t: 'next' }, ({ e, n }) => {
+      const iter = E.iterator(i)
+      const init: unknown[] = []
+      while (n--) {
+        const r = iter.next()
+        init.push(r.done ? undefined : r.value[0])
+      }
+      return [init, consumeE(e, E.fromIterator(iter))]
+    })
     .exhaustive()
 
 // biome-ignore lint/correctness/noUnusedVariables:

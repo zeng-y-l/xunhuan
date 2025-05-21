@@ -46,9 +46,12 @@ export const slice: {
   ): <T, K, Index extends undefined>(self: Iter<T, K, Index>) => Iter<T, K, Index>
 } = (from, to) => self => {
   self.k()
-  let { i: init, g: get, n: next, e: each, s: slice_ } = self
-  if (slice_) return slice_(from, to)
-  let i = 0
+  if (self.s) return self.s(from, to)
+  return slice_(from, to, 0, self) as typeof self
+}
+
+export const slice_ = <T, K>(from: number, to: number, i: number, self: Iter<T, K>): Iter<T, K> => {
+  let { i: init, g: get, n: next, e: each } = self
   return newIter(
     () => (i < to ? get() : undefined),
     () => {
@@ -72,11 +75,11 @@ export const slice: {
       }
     }),
     (from_, to_) => {
-      let remains = from - i
-      self.u = false
-      return slice(from_ + remains, Math.min(to - i, to_ + remains))(self)
+      let start = Math.max(i, from)
+      let end = Math.min(to, start + to_)
+      return slice_(Math.min(end, from_ + start), end, i, self)
     },
-  ) as typeof self
+  )
 }
 
 /**

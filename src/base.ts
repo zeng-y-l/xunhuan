@@ -27,7 +27,7 @@ type CheckFns<T, Fs extends unknown[], Fs_ = Fs> = Fs extends []
 export type IdxIter<T, K = unknown> = Iter<T, K, never>
 
 /**
- * 迭代器。惰性求值、不可变，支持无限长。
+ * 迭代器。惰性求值、不可修改，支持无限长。
  *
  * 与 {@linkcode Iterator} 类似，但只支持发出值，不支持接收值和返回值。
  * 此外，还支持同时发出键和值，无需用元组等方式模拟键值对。若不关心键，留空类型参数 `K` 即可。
@@ -36,7 +36,7 @@ export type IdxIter<T, K = unknown> = Iter<T, K, never>
  *
  * 迭代器结束后就不会再生成值。
  *
- * 迭代器只能用一次，否则会报错，哪怕只获取了第一个值。这是为了防止内部状态错误。若需要更灵活的控制，可以用 {@linkcode X.toIter} 转换为原生迭代器。
+ * 大部分方法会消耗迭代器，若不消耗则有标注。消耗的迭代器不能再用，以防内部状态错误。
  *
  * @example
  * ```ts @import.meta.vitest
@@ -161,9 +161,9 @@ export class Iter<out T, out K = unknown, out Index extends undefined = undefine
    * @internal
    * check
    */
-  k() {
+  k(then = true) {
     if (this.u) throw new Error('used')
-    this.u = true
+    this.u = then
   }
 
   /**
