@@ -1,4 +1,5 @@
 import * as E from 'extra-iterable'
+import M from 'immutable'
 import * as I from 'iterare'
 import Lazy from 'lazy.js'
 import _ from 'lodash'
@@ -64,6 +65,13 @@ describe('flatMap', () => {
       .filter(x => x !== '.')
       .value()
   })
+
+  bench('immutable', () => {
+    M.Seq(arr)
+      .flatMap(x => String(x))
+      .filter(x => x !== '.')
+      .toArray()
+  })
 })
 
 describe('range', () => {
@@ -121,6 +129,14 @@ describe('range', () => {
       .dropWhile(x => x < 1000)
       .sum()
   })
+
+  bench('immutable', () => {
+    M.Range(0, 1000)
+      .filter(x => x % 2 === 0)
+      .map(x => x * x)
+      .skipWhile(x => x < 1000)
+      .reduce((a, b) => a + b, 0)
+  })
 })
 
 describe('zip', () => {
@@ -168,8 +184,14 @@ describe('zip', () => {
   bench('lodash', () => {
     _(arr)
       .filter(x => x > 0.1)
-      .zip(arr)
-      .map(([a, b]: any) => (a + b) as number)
+      .zipWith(arr, (a, b) => a + b)
+      .max()
+  })
+
+  bench('immutable', () => {
+    M.Seq(arr)
+      .filter(x => x > 0.1)
+      .zipWith((a, b) => a + b, M.Seq(arr))
       .max()
   })
 })

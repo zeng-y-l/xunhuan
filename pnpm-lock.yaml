@@ -26,6 +26,9 @@ importers:
       fast-check:
         specifier: ^4.1.0
         version: 4.1.0
+      immutable:
+        specifier: ^5.1.2
+        version: 5.1.2
       iterare:
         specifier: ^1.2.1
         version: 1.2.1
@@ -51,7 +54,7 @@ importers:
         specifier: ^1.1.1
         version: 1.1.1(typescript@5.8.2)(vite@6.2.5(@types/node@22.14.0)(terser@5.39.0))(vitest@3.1.1)
       vitest:
-        specifier: ^3.1.1
+        specifier: ~3.1.1
         version: 3.1.1(@types/node@22.14.0)(@vitest/browser@3.1.1)(terser@5.39.0)
 
 packages:
@@ -662,6 +665,9 @@ packages:
 
   html-escaper@2.0.2:
     resolution: {integrity: sha512-H2iMtd0I4Mt5eYiapRdIDjp+XzelXQ0tFE4JS7YFwFevXXMmOp9myNrUvCg0D6ws8iqkRPBfKHgbwig1SmlLfg==}
+
+  immutable@5.1.2:
+    resolution: {integrity: sha512-qHKXW1q6liAk1Oys6umoaZbDRqjcjgSrbnrifHsfsttza7zcvRAsL7mMV6xWcyhwQy7Xj5v4hhbr6b+iDYwlmQ==}
 
   is-fullwidth-code-point@3.0.0:
     resolution: {integrity: sha512-zymm5+u+sCsSWyD9qNaejV3DFvhCKclKdizYaJUuHA83RLjb7nSuGnddCHGv0hk+KY7BMAlsWeK4Ueg6EV6XQg==}
@@ -1492,6 +1498,8 @@ snapshots:
   has-flag@4.0.0: {}
 
   html-escaper@2.0.2: {}
+
+  immutable@5.1.2: {}
 
   is-fullwidth-code-point@3.0.0: {}
 

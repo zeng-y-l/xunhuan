@@ -27,23 +27,26 @@ X.range(1000).c(
 
 ```txt
 native loop - test/main.bench.ts > flatMap
-  1.89x faster than xunhuan
-  2.39x faster than lodash
-  2.75x faster than iterare
-  2.87x faster than lazy.js
-  5.48x faster than extra-iterable
-  12.37x faster than native array method
+  1.99x faster than xunhuan
+  2.48x faster than lodash
+  2.90x faster than iterare
+  3.02x faster than lazy.js
+  3.04x faster than immutable
+  5.54x faster than extra-iterable
+  12.88x faster than native array method
 
 native loop - test/main.bench.ts > range
-  16.77x faster than xunhuan
-  21.35x faster than lazy.js
-  25.09x faster than lodash
-  75.56x faster than extra-iterable
+  16.75x faster than xunhuan
+  22.28x faster than lazy.js
+  25.41x faster than lodash
+  26.94x faster than immutable
+  75.79x faster than extra-iterable
 
 native loop - test/main.bench.ts > zip
-  18.03x faster than xunhuan
-  28.33x faster than lazy.js
-  30.26x faster than lodash
-  31.06x faster than iterare
-  57.34x faster than extra-iterable
+  18.00x faster than xunhuan
+  28.99x faster than lazy.js
+  30.01x faster than iterare
+  30.46x faster than lodash
+  57.78x faster than extra-iterable
+  98.16x faster than immutable
 ```
