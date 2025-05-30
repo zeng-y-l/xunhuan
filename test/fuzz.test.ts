@@ -22,47 +22,68 @@ type ZipperAll<R> = (
   c2: boolean,
 ) => R
 
-type Iter =
+// https://www.zhihu.com/question/636393410/answer/3447170081
+interface Lazy<T = any> {
+  __lazy: T
+}
+type Get<L extends Lazy> = L['__lazy']
+
+type IterBase<R extends Lazy> =
   | { t: 'empty' }
   | { t: 'once'; v: number; k: Key }
   | { t: 'repeat'; n: number; v: number; k: Key }
-  | { t: 'succ'; f: (v: number) => number; init: number }
-  | { t: 'arr' | 'iter'; arr: number[] }
+  | { t: 'arr'; arr: number[] }
   | { t: 'range'; from: number; to: number; step: number }
   | { t: 'obj'; obj: Record<string, number> }
-  | { t: 'enum'; e: Iter }
-  | { t: 'map'; e: Iter; fv: Mapper<number>; fk: Mapper<Key> }
-  | { t: 'skip'; e: Iter; n: number }
-  | { t: 'slice'; e: Iter; from: number; to: number }
-  | { t: 'flatMap'; e: Iter; f: Mapper<Iter> }
-  | {
-      t: 'filter' | 'takeWhile' | 'skipWhile'
-      e: Iter
-      f: Mapper<boolean>
-    }
-  | { t: 'scan'; e: Iter; f: Folder; init: number }
-  | { t: 'chain2'; e1: Iter; e2: Iter }
+  | { t: 'enum'; e: Get<R> }
+  | { t: 'map'; e: Get<R>; fv: Mapper<number>; fk: Mapper<Key> }
+  | { t: 'skip'; e: Get<R>; n: number }
+  | { t: 'slice'; e: Get<R>; from: number; to: number }
+  | { t: 'chain2'; e1: Get<R>; e2: Get<R> }
   | {
       t: 'zip2'
-      e1: Iter
-      e2: Iter
+      e1: Get<R>
+      e2: Get<R>
       fv: Zipper<number>
       fk: Zipper<Key>
     }
   | {
       t: 'zipAll2'
-      e1: Iter
-      e2: Iter
+      e1: Get<R>
+      e2: Get<R>
       fv: ZipperAll<number>
       fk: ZipperAll<Key>
     }
   | {
       t: 'chunk'
-      e: Iter
+      e: Get<R>
       n: number
       last: boolean
       f: (v: number[]) => number
     }
+  | {
+      t: 'windows'
+      e: Get<R>
+      fv: (v1: number, k1: Key, v2: number, k2: Key) => number
+      fk: (v1: number, k1: Key, v2: number, k2: Key) => Key
+    }
+  | {
+      t: 'next'
+      e: Get<R>
+      n: number
+    }
+
+type IdxIter = IterBase<Lazy<IdxIter>>
+
+type Iter =
+  | IterBase<Lazy<Iter>>
+  | { t: 'iter'; arr: number[] }
+  | { t: 'succ'; f: (v: number) => number; init: number }
+  | { t: 'flatMap'; e: Iter; f: Mapper<Iter> }
+  | { t: 'scan'; e: Iter; f: Folder; init: number }
+  | { t: 'filter'; e: Iter; f: Mapper<boolean> }
+  | { t: 'takeWhile'; e: Iter; f: Mapper<boolean> }
+  | { t: 'skipWhile'; e: Iter; f: Mapper<boolean> }
   | {
       t: 'splitBy'
       e: Iter
@@ -71,28 +92,25 @@ type Iter =
       inclusive: boolean
       last: boolean
     }
-  | {
-      t: 'windows'
-      e: Iter
-      fv: (v1: number, k1: Key, v2: number, k2: Key) => number
-      fk: (v1: number, k1: Key, v2: number, k2: Key) => Key
-    }
-  | {
-      t: 'next'
-      e: Iter
-      n: number
-    }
 
 type Folder = (acc: number, v: number, k: Key) => number
 
 type Consume =
-  | { t: 'all' | 'any' | 'find'; f: Mapper<boolean> }
+  | { t: 'all' | 'any' | 'find'; e: ConsumeRec; f: Mapper<boolean> }
   | {
       t: 'arr' | 'iter' | 'obj' | 'groupObj' | 'first' | 'last' | 'count' | 'map' | 'set'
+      e: ConsumeRec
     }
-  | { t: 'fold'; f: Folder; init: number }
-  | { t: 'fold1'; f: Folder }
-  | { t: 'next'; e: Consume; n: number }
+  | { t: 'fold'; e: ConsumeRec; f: Folder; init: number }
+  | { t: 'fold1'; e: ConsumeRec; f: Folder }
+
+type ConsumeBase<R extends Lazy> =
+  | { t: 'next'; e: Get<R>; n: number }
+  | { t: 'length'; e: Get<ConsumeIdxRecL> }
+
+type ConsumeRec = ConsumeBase<Lazy<ConsumeRec>> | { t: 'leaf'; e: Iter }
+type ConsumeIdxRec = ConsumeBase<ConsumeIdxRecL> | { t: 'leafIdx'; e: IdxIter }
+type ConsumeIdxRecL = Lazy<ConsumeIdxRec>
 
 const forever = (e: Iter): boolean =>
   match(e)
@@ -120,7 +138,8 @@ const forever = (e: Iter): boolean =>
     .with({ t: P.union('zipAll2', 'chain2') }, ({ e1, e2 }) => forever(e1) || forever(e2))
     .exhaustive()
 
-const take = (e: Iter): Iter => (forever(e) ? { t: 'slice', e, from: 0, to: 200 } : e)
+const take = <T extends Iter>(e: T): T | IterBase<Lazy<T>> =>
+  forever(e) ? { t: 'slice', e, from: 0, to: 200 } : e
 
 const arbKey = () => fc.oneof(fc.integer(), fc.string())
 
@@ -134,189 +153,268 @@ const arbZipperAll = <T>(r: fc.Arbitrary<T>) =>
 
 const arbFolder = fc.func(fc.integer()).map<Folder>(f => (acc, v, k) => f(acc, v, k))
 
-const arbCreateIter = fc.oneof<fc.Arbitrary<Iter>[]>(
+const arbOneof = <T>(...args: (false | fc.MaybeWeightedArbitrary<T>)[]) =>
+  fc.oneof(...args.filter(x => x !== false))
+
+const arbIdxIterLeaf = (): fc.Arbitrary<IdxIter>[] => [
   fc.constant({ t: 'empty' }),
   fc.tuple(fc.integer(), arbKey()).map(([v, k]) => ({ t: 'once', v, k })),
   fc
     .tuple(fc.integer(), fc.option(fc.nat()), arbKey())
     .map(([v, n, k]) => ({ t: 'repeat', n: n ?? Infinity, v, k })),
-  fc.record({
-    t: fc.constantFrom('arr', 'iter'),
-    arr: fc.array(fc.integer()),
-  }),
+  fc.array(fc.integer()).map(arr => ({ t: 'arr', arr })),
   fc
     .array(fc.tuple(fc.string(), fc.integer()))
     .map(e => ({ t: 'obj', obj: Object.fromEntries(e) })),
   fc
-    .tuple(fc.integer(), fc.func(fc.integer()))
-    .map(([init, f]) => ({ t: 'succ', f: a => f(a), init })),
-  fc
     .tuple(fc.integer(), fc.integer(), fc.integer())
     .filter(([, b, step]) => b * step > 0)
     .map(([from, b, step]) => ({ t: 'range', from, to: from + b, step })),
-)
+]
 
-const _arbIter = fc.letrec<{ iter: Iter }>(tie => ({
-  iter: fc.oneof<fc.MaybeWeightedArbitrary<Iter>[]>(
-    arbCreateIter,
-    tie('iter').map(e => ({ t: 'enum', e })),
-    fc.record({
-      t: fc.constant('map'),
-      e: tie('iter'),
-      fv: arbMapper(fc.integer()),
-      fk: arbMapper(arbKey()),
-    }),
-    fc
-      .tuple(tie('iter').map(take), arbMapper(tie('iter')))
-      .map(([e, f]) => ({ t: 'flatMap', e, f })),
-    fc.tuple(tie('iter'), arbMapper(fc.boolean())).map(([e, f]) => ({ t: 'takeWhile', e, f })),
-    fc.record({
-      t: fc.constantFrom('filter', 'skipWhile'),
-      e: tie('iter').map(take),
-      f: arbMapper(fc.boolean()),
-    }),
-    fc
-      .tuple(tie('iter'), arbFolder, fc.integer())
-      .map(([e, f, init]) => ({ t: 'scan', e, f, init })),
-    {
-      weight: 5,
-      arbitrary: fc
-        .tuple(tie('iter'), fc.nat(50))
-        .chain(([e, to]) =>
-          fc.nat(to ?? 20).map(from => ({ t: 'slice', e, from, to: to ?? Infinity })),
-        ),
-    },
-    fc.record({
-      t: fc.constantFrom('skip', 'next'),
-      e: tie('iter'),
-      n: fc.nat(20),
-    }),
-    fc.tuple(tie('iter'), tie('iter')).map(([e1, e2]) => ({ t: 'chain2', e1, e2 })),
-    fc.record({
-      t: fc.constant('zip2'),
-      e1: tie('iter'),
-      e2: tie('iter'),
-      fv: arbZipper(fc.integer()),
-      fk: arbZipper(arbKey()),
-    }),
-    fc.record({
-      t: fc.constant('zipAll2'),
-      e1: tie('iter'),
-      e2: tie('iter'),
-      fv: arbZipperAll(fc.integer()),
-      fk: arbZipperAll(arbKey()),
-    }),
-    fc.record({
+const arbIterLeaf = (): fc.Arbitrary<Iter>[] => [
+  ...arbIdxIterLeaf(),
+  fc.array(fc.integer()).map(arr => ({ t: 'iter', arr })),
+  fc
+    .tuple(fc.integer(), fc.func(fc.integer()))
+    .map(([init, f]) => ({ t: 'succ', f: a => f(a), init })),
+]
+
+const arbIdxIterRec = <R>(
+  self: fc.Arbitrary<R>,
+): fc.MaybeWeightedArbitrary<IterBase<Lazy<R>>>[] => [
+  self.map(e => ({ t: 'enum', e })),
+  fc.record({
+    t: fc.constant('map'),
+    e: self,
+    fv: arbMapper(fc.integer()),
+    fk: arbMapper(arbKey()),
+  }),
+  {
+    weight: 5,
+    arbitrary: fc
+      .tuple(self, fc.nat(50))
+      .chain(([e, to]) =>
+        fc.nat(to ?? 20).map(from => ({ t: 'slice', e, from, to: to ?? Infinity })),
+      ),
+  },
+  fc.record({
+    t: fc.constantFrom('skip', 'next'),
+    e: self,
+    n: fc.nat(20),
+  }),
+  fc.tuple(self, self).map(([e1, e2]) => ({ t: 'chain2', e1, e2 })),
+  fc.record({
+    t: fc.constant('zip2'),
+    e1: self,
+    e2: self,
+    fv: arbZipper(fc.integer()),
+    fk: arbZipper(arbKey()),
+  }),
+  fc.record({
+    t: fc.constant('zipAll2'),
+    e1: self,
+    e2: self,
+    fv: arbZipperAll(fc.integer()),
+    fk: arbZipperAll(arbKey()),
+  }),
+  {
+    weight: 2,
+    arbitrary: fc.record({
       t: fc.constant('chunk'),
-      e: tie('iter'),
+      e: self,
       n: fc.integer({ min: 1, max: 20 }),
       last: fc.boolean(),
       f: fc.func(fc.integer()).map(f => (c: number[]) => f(c)),
     }),
-    fc.record({
-      t: fc.constant('splitBy'),
-      e: tie('iter').map(take),
-      fp: arbMapper(fc.boolean()),
-      fm: fc.func(fc.integer()).map(f => (c: number[]) => f(c)),
-      inclusive: fc.boolean(),
-      last: fc.boolean(),
-    }),
-    fc.tuple(tie('iter'), fc.func(fc.integer()), fc.func(arbKey())).map(([e, fv, fk]) => ({
-      t: 'windows',
-      e,
-      fv: (v1: number, k1: Key, v2: number, k2: Key) => fv(v1, k1, v2, k2),
-      fk: (v1: number, k1: Key, v2: number, k2: Key) => fk(v1, k1, v2, k2),
-    })),
-  ),
-}))
-const arbIter = _arbIter.iter.map(take)
+  },
+  fc.tuple(self, fc.func(fc.integer()), fc.func(arbKey())).map(([e, fv, fk]) => ({
+    t: 'windows',
+    e,
+    fv: (v1: number, k1: Key, v2: number, k2: Key) => fv(v1, k1, v2, k2),
+    fk: (v1: number, k1: Key, v2: number, k2: Key) => fk(v1, k1, v2, k2),
+  })),
+]
 
-const { self: arbConsume } = fc.letrec<{ self: Consume }>(tie => ({
-  self: fc.oneof<fc.Arbitrary<Consume>[]>(
-    fc.constant({ t: 'iter' }),
-    fc.constantFrom('arr', 'obj', 'groupObj', 'first').map(t => ({ t })),
-    fc.constantFrom('last', 'count').map(t => ({ t })),
-    fc.record({
-      t: fc.constantFrom('all', 'any', 'find'),
-      f: arbMapper(fc.boolean()),
-    }),
-    fc.record({
-      t: fc.constantFrom('fold', 'fold1'),
-      f: arbFolder,
-      init: fc.integer(),
-    }),
-    fc.tuple(tie('self'), fc.nat(20)).map(([e, n]) => ({ t: 'next', e, n })),
-  ),
+const arbIterRec = (self: fc.Arbitrary<Iter>): fc.MaybeWeightedArbitrary<Iter>[] => [
+  ...arbIdxIterRec(self),
+  fc.tuple(self.map(take), arbMapper(self)).map(([e, f]) => ({ t: 'flatMap', e, f })),
+  fc.tuple(self, arbMapper(fc.boolean())).map(([e, f]) => ({ t: 'takeWhile', e, f })),
+  fc.record({
+    t: fc.constantFrom('filter', 'skipWhile'),
+    e: self.map(take),
+    f: arbMapper(fc.boolean()),
+  }),
+  fc.tuple(self, arbFolder, fc.integer()).map(([e, f, init]) => ({ t: 'scan', e, f, init })),
+  fc.record({
+    t: fc.constant('splitBy'),
+    e: self.map(take),
+    fp: arbMapper(fc.boolean()),
+    fm: fc.func(fc.integer()).map(f => (c: number[]) => f(c)),
+    inclusive: fc.boolean(),
+    last: fc.boolean(),
+  }),
+]
+
+const arbIterLet = fc.letrec<{ iter: Iter; idx: IdxIter }>(tie => ({
+  idx: arbOneof(arbOneof(...arbIdxIterLeaf()), ...arbIdxIterRec(tie('idx'))),
+  iter: arbOneof(arbOneof(...arbIterLeaf()), ...arbIterRec(tie('iter'))),
 }))
 
-const iterX = (e: Iter): X.Iter<number, Key> =>
-  match<Iter, X.Iter<number, Key>>(e)
+const arbIter = arbIterLet.iter.map(take)
+const arbIdxIter = arbIterLet.idx.map(take)
+
+const arbConsumeBase = <R>(
+  self: fc.Arbitrary<R>,
+  idx: fc.Arbitrary<ConsumeIdxRec>,
+): fc.Arbitrary<ConsumeBase<Lazy<R>>>[] => [
+  fc.tuple(self, fc.nat(20)).map(([e, n]) => ({ t: 'next', e, n })),
+  idx.map(e => ({ t: 'length', e })),
+]
+
+const { consume: arbConsumeRec } = fc.letrec<{
+  consume: ConsumeRec
+  idx: ConsumeIdxRec
+}>(tie => ({
+  consume: arbOneof<ConsumeRec>(
+    arbIter.map(e => ({ t: 'leaf', e })),
+    ...arbConsumeBase(tie('consume'), tie('idx')),
+  ),
+  idx: arbOneof<ConsumeIdxRec>(
+    arbIdxIter.map(e => ({ t: 'leafIdx', e })),
+    ...arbConsumeBase(tie('idx'), tie('idx')),
+  ),
+}))
+
+const arbConsume = arbOneof<Consume>(
+  arbConsumeRec.map(e => ({ t: 'iter', e })),
+  fc.record({
+    t: fc.constantFrom('arr', 'obj', 'groupObj', 'first'),
+    e: arbConsumeRec,
+  }),
+  fc.record({
+    t: fc.constantFrom('last', 'count'),
+    e: arbConsumeRec,
+  }),
+  fc.record({
+    t: fc.constantFrom('all', 'any', 'find'),
+    e: arbConsumeRec,
+    f: arbMapper(fc.boolean()),
+  }),
+  fc.record({
+    t: fc.constantFrom('fold', 'fold1'),
+    e: arbConsumeRec,
+    f: arbFolder,
+    init: fc.integer(),
+  }),
+  fc.record({
+    t: fc.constantFrom('fold', 'fold1'),
+    e: arbConsumeRec,
+    f: arbFolder,
+    init: fc.integer(),
+  }),
+)
+
+const iterBaseX = <R extends Lazy, Idx extends undefined>(
+  e: IterBase<R>,
+  rec: (r: Get<R>) => X.Iter<number, Key, Idx>,
+): X.Iter<number, Key, Idx> =>
+  match<IterBase<R>, X.Iter<number, Key, Idx>>(e)
     .with({ t: 'empty' }, () => X.empty())
     .with({ t: 'once' }, ({ v, k }) => X.onceKV(v, k))
     .with({ t: 'repeat' }, ({ n, v, k }) => X.repeatKV(v, k, n))
-    .with({ t: 'succ' }, ({ f, init }) => X.succ(f, init))
     .with({ t: 'arr' }, ({ arr }) => X.ofArr(arr))
-    .with({ t: 'iter' }, ({ arr }) => X.ofIter(arr))
     .with({ t: 'range' }, ({ from, to, step }) => X.range(from, to, step))
     .with({ t: 'obj' }, ({ obj }) => X.ofObj(obj))
-    .with({ t: 'enum' }, ({ e }) => X.enume(iterX(e)))
-    .with({ t: 'map' }, ({ e, fv, fk }) => iterX(e).c(X.mapKV(fv, fk)))
-    .with({ t: 'flatMap' }, ({ e, f }) => iterX(e).c(X.flatMap((v, k) => iterX(f(v, k)))))
-    .with({ t: 'filter' }, ({ e, f }) => iterX(e).c(X.filter(f)))
-    .with({ t: 'scan' }, ({ e, f, init }) => iterX(e).c(X.scan(f, init)))
-    .with({ t: 'takeWhile' }, ({ e, f }) => iterX(e).c(X.takeWhile(f)))
-    .with({ t: 'skipWhile' }, ({ e, f }) => iterX(e).c(X.skipWhile(f)))
-    .with({ t: 'slice' }, ({ e, from, to }) => iterX(e).c(X.slice(from, to)))
-    .with({ t: 'skip' }, ({ e, n }) => iterX(e).c(X.skip(n)))
-    .with({ t: 'zip2' }, ({ e1, e2, fv, fk }) => iterX(e1).c(X.zipByKV(iterX(e2), fv, fk)))
-    .with({ t: 'chain2' }, ({ e1, e2 }) => iterX(e2).c(X.prepend(iterX(e1))))
-    .with({ t: 'zipAll2' }, ({ e1, e2, fv, fk }) => iterX(e1).c(X.zipAllByKV(iterX(e2), fv, fk)))
-    .with({ t: 'chunk' }, ({ e, n, last, f }) => iterX(e).c(X.chunk(n, last), X.map(f)))
-    .with({ t: 'splitBy' }, ({ e, fp, fm, inclusive, last }) =>
-      iterX(e).c(X.splitBy(fp, inclusive, last), X.map(fm)),
-    )
-    .with({ t: 'windows' }, ({ e, fv, fk }) => iterX(e).c(X.windowsByKV(fv, fk)))
+    .with({ t: 'enum' }, ({ e }) => X.enume(rec(e)))
+    .with({ t: 'map' }, ({ e, fv, fk }) => rec(e).c(X.mapKV(fv, fk)))
+    .with({ t: 'slice' }, ({ e, from, to }) => rec(e).c(X.slice(from, to)))
+    .with({ t: 'skip' }, ({ e, n }) => rec(e).c(X.skip(n)))
+    .with({ t: 'zip2' }, ({ e1, e2, fv, fk }) => rec(e1).c(X.zipByKV(rec(e2), fv, fk)))
+    .with({ t: 'chain2' }, ({ e1, e2 }) => rec(e2).c(X.prepend(rec(e1))))
+    .with({ t: 'zipAll2' }, ({ e1, e2, fv, fk }) => rec(e1).c(X.zipAllByKV(rec(e2), fv, fk)))
+    .with({ t: 'chunk' }, ({ e, n, last, f }) => rec(e).c(X.chunk(n, last), X.map(f)))
+    .with({ t: 'windows' }, ({ e, fv, fk }) => rec(e).c(X.windowsByKV(fv, fk)))
     .with({ t: 'next' }, ({ e, n }) => {
-      const iter = iterX(e)
+      const iter = rec(e)
       X.current(iter)
       while (n--) X.moveNext(iter)
       return iter
     })
     .exhaustive()
 
-const consumeX = (e: Consume, i: X.Iter<number, Key>): unknown =>
+const iterIdxX = (e: IdxIter): X.IdxIter<number, Key> => iterBaseX(e, iterIdxX)
+
+const iterX = (e: Iter): X.Iter<number, Key> =>
+  match<Iter, X.Iter<number, Key>>(e)
+    .with({ t: 'succ' }, ({ f, init }) => X.succ(f, init))
+    .with({ t: 'iter' }, ({ arr }) => X.ofIter(arr))
+    .with({ t: 'flatMap' }, ({ e, f }) => iterX(e).c(X.flatMap((v, k) => iterX(f(v, k)))))
+    .with({ t: 'filter' }, ({ e, f }) => iterX(e).c(X.filter(f)))
+    .with({ t: 'scan' }, ({ e, f, init }) => iterX(e).c(X.scan(f, init)))
+    .with({ t: 'takeWhile' }, ({ e, f }) => iterX(e).c(X.takeWhile(f)))
+    .with({ t: 'skipWhile' }, ({ e, f }) => iterX(e).c(X.skipWhile(f)))
+    .with({ t: 'splitBy' }, ({ e, fp, fm, inclusive, last }) =>
+      iterX(e).c(X.splitBy(fp, inclusive, last), X.map(fm)),
+    )
+    .otherwise(e => iterBaseX(e, iterX))
+
+const consumeX = (e: Consume, out: unknown[]) =>
   match(e)
-    .with({ t: 'arr' }, () => X.toArr(i))
-    .with({ t: 'iter' }, () => Array.from(X.toIter(i)))
-    .with({ t: 'obj' }, () =>
-      i.c(
+    .with({ t: 'arr' }, ({ e }) => X.toArr(consumeRecX(e, out)))
+    .with({ t: 'iter' }, ({ e }) => Array.from(X.toIter(consumeRecX(e, out))))
+    .with({ t: 'obj' }, ({ e }) =>
+      consumeRecX(e, out).c(
         X.mapK((_, k) => String(k)),
         X.toObj,
       ),
     )
-    .with({ t: 'groupObj' }, () =>
-      i.c(
+    .with({ t: 'groupObj' }, ({ e }) =>
+      consumeRecX(e, out).c(
         X.mapK((_, k) => String(k)),
         X.groupObj,
       ),
     )
-    .with({ t: 'first' }, () => X.first(i))
-    .with({ t: 'last' }, () => X.last(i))
-    .with({ t: 'count' }, () => i.c(X.count))
-    .with({ t: 'map' }, () => i.c(X.toMap))
-    .with({ t: 'set' }, () => i.c(X.toSet))
-    .with({ t: 'all' }, ({ f }) => i.c(X.all(f)))
-    .with({ t: 'any' }, ({ f }) => i.c(X.any(f)))
-    .with({ t: 'find' }, ({ f }) => i.c(X.find(f)))
-    .with({ t: 'fold' }, ({ f, init }) => i.c(X.fold(f, init)))
-    .with({ t: 'fold1' }, ({ f }) => i.c(X.fold1(f)))
+    .with({ t: 'first' }, ({ e }) => X.first(consumeRecX(e, out)))
+    .with({ t: 'last' }, ({ e }) => X.last(consumeRecX(e, out)))
+    .with({ t: 'count' }, ({ e }) => consumeRecX(e, out).c(X.count))
+    .with({ t: 'map' }, ({ e }) => consumeRecX(e, out).c(X.toMap))
+    .with({ t: 'set' }, ({ e }) => consumeRecX(e, out).c(X.toSet))
+    .with({ t: 'all' }, ({ e, f }) => consumeRecX(e, out).c(X.all(f)))
+    .with({ t: 'any' }, ({ e, f }) => consumeRecX(e, out).c(X.any(f)))
+    .with({ t: 'find' }, ({ e, f }) => consumeRecX(e, out).c(X.find(f)))
+    .with({ t: 'fold' }, ({ e, f, init }) => consumeRecX(e, out).c(X.fold(f, init)))
+    .with({ t: 'fold1' }, ({ e, f }) => consumeRecX(e, out).c(X.fold1(f)))
+    .exhaustive()
+
+const consumeRecX = (e: ConsumeRec, out: unknown[]): X.Iter<number, Key> =>
+  match(e)
+    .with({ t: 'leaf' }, ({ e }) => iterX(e))
+    .otherwise(e => consumeBaseX(e, out, consumeRecX))
+
+const consumeIdxRecX = (e: ConsumeIdxRec, out: unknown[]): X.IdxIter<number, Key> =>
+  match(e)
+    .with({ t: 'leafIdx' }, ({ e }) => iterIdxX(e))
+    .otherwise(e => consumeBaseX(e, out, consumeIdxRecX))
+
+const consumeBaseX = <R, I extends X.Iter<number, Key>>(
+  e: ConsumeBase<Lazy<R>>,
+  out: unknown[],
+  r: (e: R, out: unknown[]) => I,
+): I | X.IdxIter<number, Key> =>
+  match(e)
     .with({ t: 'next' }, ({ e, n }) => {
-      const init: unknown[] = []
+      const i = r(e, out)
       while (n--) {
-        init.push(X.current(i))
+        out.push(X.current(i))
         X.moveNext(i)
       }
-      return [init, consumeX(e, i)]
+      return i
+    })
+    .with({ t: 'length' }, ({ e }) => {
+      const i = consumeIdxRecX(e, out)
+      out.push(X.length(i))
+      return i
     })
     .exhaustive()
 
@@ -388,40 +486,56 @@ const iterE = (e: Iter): Iterable<[number, Key]> =>
     )
     .exhaustive()
 
-const consumeE = (e: Consume, i: Iterable<[number, Key]>): unknown =>
-  match<Consume, unknown>(e)
-    .with({ t: P.union('arr', 'iter') }, () => Array.from(i, ([v]) => v))
-    .with({ t: 'obj' }, () => Object.fromEntries(E.map(i, ([v, k]) => [String(k), v])))
-    .with({ t: 'groupObj' }, () => {
+const consumeE = (e: Consume, out: unknown[]) =>
+  match(e)
+    .with({ t: P.union('arr', 'iter') }, ({ e }) => Array.from(consumeRecE(e, out), ([v]) => v))
+    .with({ t: 'obj' }, ({ e }) =>
+      Object.fromEntries(E.map(consumeRecE(e, out), ([v, k]) => [String(k), v])),
+    )
+    .with({ t: 'groupObj' }, ({ e }) => {
       const obj: Record<string, number[]> = {}
-      for (let [v, k] of i) {
+      for (let [v, k] of consumeRecE(e, out)) {
         k = String(k)
         if (Object.prototype.hasOwnProperty.call(obj, k)) obj[k].push(v)
         else obj[k] = [v]
       }
       return obj
     })
-    .with({ t: 'first' }, () => E.get(i, 0)?.[0])
-    .with({ t: 'last' }, () => E.last(i)?.[0])
-    .with({ t: 'count' }, () => E.length(i))
-    .with({ t: 'map' }, () => new Map(i))
-    .with({ t: 'set' }, () => new Set(E.map(i, ([v]) => v)))
-    .with({ t: 'all' }, ({ f }) => E.every(i, ([v, k]) => f(v, k)))
-    .with({ t: 'any' }, ({ f }) => E.some(i, ([v, k]) => f(v, k)))
-    .with({ t: 'find' }, ({ f }) => E.find(i, ([v, k]) => f(v, k))?.[0])
-    .with({ t: 'fold' }, ({ f, init }) => E.reduce(i, (acc, [v, k]) => f(acc, v, k), init))
+    .with({ t: 'first' }, ({ e }) => E.get(consumeRecE(e, out), 0)?.[0])
+    .with({ t: 'last' }, ({ e }) => E.last(consumeRecE(e, out))?.[0])
+    .with({ t: 'count' }, ({ e }) => E.length(consumeRecE(e, out)))
+    .with({ t: 'map' }, ({ e }) => new Map(consumeRecE(e, out)))
+    .with({ t: 'set' }, ({ e }) => new Set(E.map(consumeRecE(e, out), ([v]) => v)))
+    .with({ t: 'all' }, ({ e, f }) => E.every(consumeRecE(e, out), ([v, k]) => f(v, k)))
+    .with({ t: 'any' }, ({ e, f }) => E.some(consumeRecE(e, out), ([v, k]) => f(v, k)))
+    .with({ t: 'find' }, ({ e, f }) => E.find(consumeRecE(e, out), ([v, k]) => f(v, k))?.[0])
+    .with({ t: 'fold' }, ({ e, f, init }) =>
+      E.reduce(consumeRecE(e, out), (acc, [v, k]) => f(acc, v, k), init),
+    )
     .with(
       { t: 'fold1' },
-      ({ f }) => E.reduce<[number, Key], [number]>(i, ([acc], [v, k]) => [f(acc, v, k)])?.[0],
+      ({ e, f }) =>
+        E.reduce<[number, Key], [number]>(consumeRecE(e, out), ([acc], [v, k]) => [
+          f(acc, v, k),
+        ])?.[0],
     )
+    .exhaustive()
+
+const consumeRecE = (e: ConsumeRec | ConsumeIdxRec, out: unknown[]): Iterable<[number, Key]> =>
+  match(e)
+    .with({ t: P.union('leaf', 'leafIdx') }, ({ e }) => iterE(e))
     .with({ t: 'next' }, ({ e, n }) => {
-      const iter = E.iterator(i)
-      const init: unknown[] = []
+      const iter = E.iterator(consumeRecE(e, out))
       while (n--) {
         const r = iter.next()
-        init.push(r.done ? undefined : r.value[0])
+        out.push(r.done ? undefined : r.value[0])
       }
-      return [init, consumeE(e, E.fromIterator(iter))]
+      return E.fromIterator(iter)
+    })
+    .with({ t: 'length' }, ({ e }) => {
+      const arr = [...consumeRecE(e, out)]
+      out.push(arr.length)
+      return arr
     })
     .exhaustive()
 
@@ -433,12 +547,42 @@ const c = new Console({
 
 test('fuzz', () => {
   fc.assert(
-    fc.property(arbIter, arbConsume, (iter, consume) => {
+    fc.property(arbConsume, consume => {
       // c.log(iter, consume)
-      const val1 = consumeX(consume, iterX(iter))
-      const val2 = consumeE(consume, iterE(iter))
+      const out1: unknown[] = []
+      const out2: unknown[] = []
+      const val1 = consumeX(consume, out1)
+      const val2 = consumeE(consume, out2)
+      expect(out1).toEqual(out2)
       expect(val1).toEqual(val2)
     }),
     {},
   )
+})
+
+test('a', () => {
+  const consume = {
+    t: 'iter',
+    e: {
+      t: 'length',
+      e: {
+        t: 'length',
+        e: {
+          t: 'next',
+          e: {
+            t: 'leafIdx',
+            e: { t: 'repeat', n: 200, v: 0, k: '' },
+          },
+          n: 0,
+        },
+      },
+    },
+  } as const
+  // c.log(iter, consume)
+  const out1: unknown[] = []
+  const out2: unknown[] = []
+  const val1 = consumeX(consume, out1)
+  const val2 = consumeE(consume, out2)
+  expect(out1).toEqual(out2)
+  expect(val1).toEqual(val2)
 })
