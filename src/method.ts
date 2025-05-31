@@ -73,3 +73,26 @@ export const length: {
   self.i?.()
   return self.l()
 }
+
+/**
+ * 获取第 i 个值。
+ *
+ * @param i 自然数。要获取的位置，当前值为 0。
+ *
+ * @returns 方法，不消耗，返回输入迭代器的第 i 个值，没有则返回 `undefined`。
+ *
+ * @example
+ * ```ts @import.meta.vitest
+ * expect(X.ofArr([1, 2, 3]).c(X.nth(1))).toEqual(2)
+ * expect(X.empty().c(X.nth(1))).toEqual(undefined)
+ * ```
+ *
+ * @see {@linkcode X.count}
+ */
+export const nth: {
+  (i: number): <T>(self: IdxIter<T>) => T | undefined
+} = i => self => {
+  self.k(false)
+  self.i?.()
+  return self.d(i)?.v
+}

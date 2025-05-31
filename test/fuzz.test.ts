@@ -107,6 +107,7 @@ type Consume =
 type ConsumeBase<R extends Lazy> =
   | { t: 'next'; e: Get<R>; n: number }
   | { t: 'length'; e: Get<ConsumeIdxRecL> }
+  | { t: 'index'; e: Get<ConsumeIdxRecL>; i: number }
 
 type ConsumeRec = ConsumeBase<Lazy<ConsumeRec>> | { t: 'leaf'; e: Iter }
 type ConsumeIdxRec = ConsumeBase<ConsumeIdxRecL> | { t: 'leafIdx'; e: IdxIter }
@@ -270,6 +271,7 @@ const arbConsumeBase = <R>(
 ): fc.Arbitrary<ConsumeBase<Lazy<R>>>[] => [
   fc.tuple(self, fc.nat(20)).map(([e, n]) => ({ t: 'next', e, n })),
   idx.map(e => ({ t: 'length', e })),
+  fc.tuple(idx, fc.nat(20)).map(([e, i]) => ({ t: 'index', e, i })),
 ]
 
 const { consume: arbConsumeRec } = fc.letrec<{
@@ -416,6 +418,11 @@ const consumeBaseX = <R, I extends X.Iter<number, Key>>(
       out.push(X.length(i))
       return i
     })
+    .with({ t: 'index' }, ({ e, i }) => {
+      const iter = consumeIdxRecX(e, out)
+      out.push(iter.c(X.nth(i)))
+      return iter
+    })
     .exhaustive()
 
 const iterE = (e: Iter): Iterable<[number, Key]> =>
@@ -535,6 +542,11 @@ const consumeRecE = (e: ConsumeRec | ConsumeIdxRec, out: unknown[]): Iterable<[n
     .with({ t: 'length' }, ({ e }) => {
       const arr = [...consumeRecE(e, out)]
       out.push(arr.length)
+      return arr
+    })
+    .with({ t: 'index' }, ({ e, i }) => {
+      const arr = [...consumeRecE(e, out)]
+      out.push(arr[i]?.[0])
       return arr
     })
     .exhaustive()
