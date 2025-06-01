@@ -5,6 +5,8 @@ import type { Iter, KeyOf, Maybe, ValOf } from './base'
 /**
  * 获取第一个值。
  *
+ * 会消耗迭代器，可以使用不消耗的 {@linkcode X.current}。
+ *
  * 方法，返回输入迭代器的第一个值。若空则返回 `undefined`。
  *
  * @example

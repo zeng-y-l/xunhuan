@@ -22,12 +22,12 @@ type CheckFns<T, Fs extends unknown[], Fs_ = Fs> = Fs extends []
 /**
  * 长度固定、支持随机访问的迭代器。
  *
- * @see {X.Iter}
+ * @see {@linkcode X.Iter}
  */
 export type IdxIter<T, K = unknown> = Iter<T, K, never>
 
 /**
- * 迭代器。惰性求值、不可修改，支持无限长。
+ * 迭代器。惰性求值、不可修改，支持无限长。{@linkcode X.IdxIter} 支持类型安全的随机访问。
  *
  * 与 {@linkcode Iterator} 类似，但只支持发出值，不支持接收值和返回值。
  * 此外，还支持同时发出键和值，无需用元组等方式模拟键值对。若不关心键，留空类型参数 `K` 即可。
@@ -52,9 +52,16 @@ export type IdxIter<T, K = unknown> = Iter<T, K, never>
  *   X.first(iter)
  *   X.first(iter)
  * }).toThrow('used')
- * ```
  *
- * @see {X.IdxIter}
+ * // 随机访问，不会计算其他部分
+ * const effect = []
+ * const iter = X.ofArr([1, 2, 3]).c(
+ *   X.map(x => effect.push(x))
+ * )
+ * expect(iter.c(X.nth(2))).toEqual(1)
+ * expect(iter.c(X.nth(1))).toEqual(2)
+ * expect(effect).toEqual([3, 2])
+ * ```
  */
 export class Iter<out T, out K = unknown, out Index extends undefined = undefined> {
   /**
