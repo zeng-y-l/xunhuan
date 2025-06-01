@@ -1,6 +1,6 @@
 {
   "name": "xunhuan",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "type": "module",
   "description": "小而快的迭代器库",
   "keywords": ["iterator", "functional", "lazy", "collection", "util"],
