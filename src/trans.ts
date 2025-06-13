@@ -1424,6 +1424,7 @@ export const windowsByKV_ = <T, K, U, L, Index extends undefined>(
       index &&
       ((from, to) => {
         if (!step) return windowsByKV(val, key)(slice(from, to + 1))
+        if (to === 0) return windowsByKV(val, key)(slice(0, 0))
         if (from === 0) {
           return windowsByKV_(val, key, slice(0, to), done, v1, k1, v2, k2, step)
         }
