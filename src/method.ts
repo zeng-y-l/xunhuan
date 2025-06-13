@@ -96,3 +96,46 @@ export const nth: {
   self.i?.()
   return self.d(i)?.v
 }
+
+/**
+ * 获取分区点。
+ *
+ * 分区点是第一个满足条件的值的索引。还要求前面的都不满足条件，后面的都满足。若都不满足条件，则分区点为迭代器长度。
+ *
+ * 要求输入迭代器存在分区点，且长度有限。
+ *
+ * @param pred 函数。参数为值和键，返回是否满足条件。
+ *
+ * @returns 方法，返回输入迭代器的分区点。
+ *
+ * @example
+ * ```ts @import.meta.vitest
+ * expect(X.range(500).c(
+ *   X.partitionPoint(x => x >= 200),
+ * )).toEqual(200)
+ * expect(X.range(10).c(
+ *   X.partitionPoint(() => true),
+ * )).toEqual(0)
+ * expect(X.range(10).c(
+ *   X.partitionPoint(() => false),
+ * )).toEqual(10)
+ * ```
+ */
+export const partitionPoint: {
+  <T, K>(pred: (v: T, k: K) => boolean): (self: IdxIter<T, K>) => number
+} = pred => self => {
+  self.k(false)
+  self.i?.()
+  let low = 0
+  let high = self.l()
+  while (low < high) {
+    let mid = (low + high) >> 1
+    let { v, k } = self.d(mid)!
+    if (pred(v, k)) {
+      high = mid
+    } else {
+      low = mid + 1
+    }
+  }
+  return low
+}
