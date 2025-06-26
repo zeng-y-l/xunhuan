@@ -107,7 +107,7 @@ type ConsumeBase<R extends Lazy> =
   | { t: 'next'; e: Get<R>; n: number }
   | { t: 'length'; e: Get<ConsumeIdxRecL> }
   | { t: 'index'; e: Get<ConsumeIdxRecL>; i: number }
-  | { t: 'partitionPoint'; e: Get<ConsumeIdxRecL>; x: number }
+  | { t: 'partitionPoint' | 'binarySearch'; e: Get<ConsumeIdxRecL>; x: number }
 
 type ConsumeRec = ConsumeBase<Lazy<ConsumeRec>> | { t: 'leaf'; e: Iter }
 type ConsumeIdxRec = ConsumeBase<ConsumeIdxRecL> | { t: 'leafIdx'; e: IdxIter }
@@ -149,12 +149,12 @@ const inc = (e: ConsumeIdxRec): ConsumeIdxRec =>
       e: {
         t: 'map',
         e: { t: 'enum', e },
-        fk: (v, k) => (v % 1000) + (k as number) * 1000,
+        fk: (v, k) => (v % 500) + (k as number) * 1000,
         fv: v => v,
       },
     }))
     .with({ t: P.union('index', 'length', 'next') }, e => ({ ...e, e: inc(e.e) }))
-    .with({ t: 'partitionPoint' }, e => e)
+    .with({ t: P.union('partitionPoint', 'binarySearch') }, e => e)
     .exhaustive()
 
 const arbKey = () => fc.oneof(fc.integer(), fc.string())
@@ -287,7 +287,11 @@ const arbConsumeBase = <R>(
   fc.tuple(self, fc.nat(20)).map(([e, n]) => ({ t: 'next', e, n })),
   idx.map(e => ({ t: 'length', e })),
   fc.tuple(idx, fc.nat(20)).map(([e, i]) => ({ t: 'index', e, i })),
-  fc.tuple(idx, fc.integer()).map(([e, x]) => ({ t: 'partitionPoint', e: inc(e), x })),
+  fc.record({
+    t: fc.constantFrom('partitionPoint', 'binarySearch'),
+    e: idx.map(inc),
+    x: fc.integer(),
+  }),
 ]
 
 const { consume: arbConsumeRec } = fc.letrec<{
@@ -440,8 +444,13 @@ const consumeBaseX = <R, I extends X.Iter<number, Key>>(
       return iter
     })
     .with({ t: 'partitionPoint' }, ({ e, x }) => {
-      const iter = consumeIdxRecX(e, out)
-      out.push(iter.c(X.partitionPoint((_, k) => (k as number) > x)))
+      const iter = consumeIdxRecX(e, out) as X.IdxIter<number, number>
+      out.push(iter.c(X.partitionPoint((_, k) => k > x)))
+      return iter
+    })
+    .with({ t: 'binarySearch' }, ({ e, x }) => {
+      const iter = consumeIdxRecX(e, out) as X.IdxIter<number, number>
+      out.push(iter.c(X.binarySearchK(x)))
       return iter
     })
     .exhaustive()
@@ -574,6 +583,12 @@ const consumeRecE = (e: ConsumeRec | ConsumeIdxRec, out: unknown[]): Iterable<[n
       const arr = [...consumeRecE(e, out)]
       const idx = arr.findIndex(([, k]) => (k as number) > x)
       out.push(idx === -1 ? arr.length : idx)
+      return arr
+    })
+    .with({ t: 'binarySearch' }, ({ e, x }) => {
+      const arr = [...consumeRecE(e, out)]
+      const idx = arr.findIndex(([, k]) => k === x)
+      out.push(idx === -1 ? undefined : idx)
       return arr
     })
     .exhaustive()

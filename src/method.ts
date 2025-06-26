@@ -100,13 +100,13 @@ export const nth: {
 /**
  * 获取分区点。
  *
- * 分区点是第一个满足条件的值的索引。还要求前面的都不满足条件，后面的都满足。若都不满足条件，则分区点为迭代器长度。
+ * 分区点是第一个满足条件的值的索引，且分区点后面的都满足条件。若都不满足条件，则分区点为迭代器长度。
  *
  * 要求输入迭代器存在分区点，且长度有限。
  *
  * @param pred 函数。参数为值和键，返回是否满足条件。
  *
- * @returns 方法，返回输入迭代器的分区点。
+ * @returns 方法，不消耗，返回输入迭代器的分区点。
  *
  * @example
  * ```ts @import.meta.vitest
@@ -139,3 +139,61 @@ export const partitionPoint: {
   }
   return low
 }
+
+/**
+ * 按照函数二分查找。
+ *
+ * 要求输入迭代器在 `cmp` 下升序排列，且长度有限。
+ *
+ * @param cmp 比较函数。参数为值和键，返回值小于 0 表示太小，等于 0 表示正好，大于 0 表示太大。
+ *
+ * @returns 方法，不消耗，返回第一个正好的值的索引。若没有正好的值则返回 `undefined`。
+ *
+ * @example
+ * ```ts @import.meta.vitest
+ * expect(X.range(500).c(
+ *   X.binarySearchBy(x => x - 200),
+ * )).toEqual(200)
+ * expect(X.range(10).c(
+ *   X.binarySearchBy(() => 0),
+ * )).toEqual(0)
+ * expect(X.range(10).c(
+ *   X.binarySearchBy(() => -1),
+ * )).toEqual(undefined)
+ * ```
+ */
+export const binarySearchBy: {
+  <T, K>(cmp: (v: T, k: K) => number): (self: IdxIter<T, K>) => Maybe<number>
+} = cmp => self => {
+  let idx = self.c(partitionPoint((v, k) => cmp(v, k) >= 0))
+  let step = self.d(idx)
+  return step && cmp(step.v, step.k) === 0 ? idx : undefined
+}
+
+/**
+ * 按照键二分查找。
+ *
+ * 要求输入迭代器的键升序排列，且长度有限。
+ *
+ * @param x 要查找的键。
+ *
+ * @returns 方法，不消耗，返回第一个与要查找的键相同的索引。若没有则返回 `undefined`。
+ *
+ * @example
+ * ```ts
+ * expect(X.range(500).c(
+ *   X.binarySearchK(200),
+ * )).toEqual(200)
+ * expect(X.range(10).c(
+ *   X.binarySearchK(0),
+ * )).toEqual(0)
+ * expect(X.range(10).c(
+ *   X.binarySearchK(-1),
+ * )).toEqual(undefined)
+ * ```
+ */
+export const binarySearchK: {
+  <K>(k: K): (self: IdxIter<unknown, K>) => Maybe<number>
+} = x =>
+  // biome-ignore lint/suspicious/noSelfCompare:
+  binarySearchBy((_, k) => +(k > x || k !== k) - +(k < x || x !== x))
