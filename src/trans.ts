@@ -31,7 +31,7 @@ import {
  *   X.toArr,
  * )).toEqual([3, 4])
  * expect(X.empty().c(
- *   X.slice(Infinity, Infinity),
+ *   X.slice(100, Infinity),
  *   X.first,
  * )).toEqual(undefined)
  * ```
@@ -1093,7 +1093,7 @@ export const prepend: {
         init1?.()
         let l1 = length1()
         if (l1 < from) return slice2(from - l1, to - l1)
-        if (l1 > to) return slice1(from, to)
+        if (l1 >= to) return slice1(from, to)
         return prepend(slice1(from, Infinity))(slice2(0, to - l1))
       }),
     length1 && length2 && (() => length1() + length2()),

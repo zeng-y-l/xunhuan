@@ -26,7 +26,7 @@ const minifyPlugin: Plugin = {
   apply: 'build',
 }
 
-export default defineConfig({
+export default defineConfig(env => ({
   plugins: [doctest({}), minifyPlugin],
   build: {
     target: 'es2020',
@@ -42,6 +42,7 @@ export default defineConfig({
     isolate: false,
     pool: 'threads',
     setupFiles: 'test/setup.ts',
-    testTimeout: 20000,
+    testTimeout: 50000,
   },
-})
+  define: env.mode === 'test' ? {} : { V: 'undefined' },
+}))

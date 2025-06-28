@@ -19,6 +19,9 @@ type CheckFns<T, Fs extends unknown[], Fs_ = Fs> = Fs extends []
     ? CheckFns<T, Fs, Fs_>
     : never
 
+// 测试用
+declare const V: Maybe<typeof import('vitest')>
+
 /**
  * 长度固定、支持随机访问的迭代器。
  *
@@ -162,6 +165,60 @@ export class Iter<out T, out K = unknown, out Index extends undefined = undefine
     this.d = index
 
     this.u = false
+
+    if (V) {
+      let ready = !init
+      let used = false
+      this.i =
+        init &&
+        (() => {
+          ready = true
+          return init()
+        })
+      this.g = () => {
+        V.expect(ready).toBe(true)
+        V.expect(used).toBe(false)
+        return get()
+      }
+      this.n = () => {
+        V.expect(ready).toBe(true)
+        V.expect(used).toBe(false)
+        return next()
+      }
+      this.e = f => {
+        V.expect(used).toBe(false)
+        used = true
+        return each(f)
+      }
+      this.s =
+        slice &&
+        ((from, to) => {
+          V.expect(used).toBe(false)
+          used = true
+          V.expect(from).toBeGreaterThanOrEqual(0)
+          V.expect(from % 1).toBe(0)
+          V.expect(to).toBeGreaterThanOrEqual(0)
+          V.expect(to === Infinity || to % 1 === 0).toBe(true)
+          V.expect(to).toBeGreaterThanOrEqual(from)
+          return slice(from, to)
+        })
+      this.l =
+        length &&
+        (() => {
+          V.expect(ready).toBe(true)
+          V.expect(used).toBe(false)
+          return length()
+        })
+      this.d =
+        index &&
+        (i => {
+          V.expect(ready).toBe(true)
+          V.expect(used).toBe(false)
+          V.expect(i).toBeGreaterThanOrEqual(0)
+          V.expect(i % 1).toBe(0)
+          return index(i)
+        })
+    }
   }
 
   /**

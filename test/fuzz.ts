@@ -134,13 +134,13 @@ const forever = (e: Iter): boolean =>
       },
       ({ e }) => forever(e),
     )
-    .with({ t: 'slice' }, ({ e, to }) => to > 200 && forever(e))
+    .with({ t: 'slice' }, ({ e, to }) => to > 50 && forever(e))
     .with({ t: 'zip2' }, ({ e1, e2 }) => forever(e1) && forever(e2))
     .with({ t: P.union('zipAll2', 'chain2') }, ({ e1, e2 }) => forever(e1) || forever(e2))
     .exhaustive()
 
 const take = <T extends Iter>(e: T): T | IterBase<Lazy<T>> =>
-  forever(e) ? { t: 'slice', e, from: 0, to: 200 } : e
+  forever(e) ? { t: 'slice', e, from: 0, to: 50 } : e
 
 const inc = (e: ConsumeIdxRec): ConsumeIdxRec =>
   match<ConsumeIdxRec, ConsumeIdxRec>(e)
@@ -207,17 +207,17 @@ const arbIdxIterRec = <R>(
     fk: arbMapper(arbKey()),
   }),
   {
-    weight: 5,
+    weight: 7,
     arbitrary: fc
-      .tuple(self, fc.nat(50))
+      .tuple(self, fc.nat(15))
       .chain(([e, to]) =>
-        fc.nat(to ?? 20).map(from => ({ t: 'slice', e, from, to: to ?? Infinity })),
+        fc.nat(to ?? 10).map(from => ({ t: 'slice', e, from, to: to ?? Infinity })),
       ),
   },
   fc.record({
     t: fc.constantFrom('skip', 'next'),
     e: self,
-    n: fc.nat(20),
+    n: fc.nat(10),
   }),
   fc.tuple(self, self).map(([e1, e2]) => ({ t: 'chain2', e1, e2 })),
   fc.record({
@@ -235,21 +235,24 @@ const arbIdxIterRec = <R>(
     fk: arbZipperAll(arbKey()),
   }),
   {
-    weight: 2,
+    weight: 3,
     arbitrary: fc.record({
       t: fc.constant('chunk'),
       e: self,
-      n: fc.integer({ min: 1, max: 20 }),
+      n: fc.integer({ min: 1, max: 10 }),
       last: fc.boolean(),
       f: fc.func(fc.integer()).map(f => (c: number[]) => f(c)),
     }),
   },
-  fc.tuple(self, fc.func(fc.integer()), fc.func(arbKey())).map(([e, fv, fk]) => ({
-    t: 'windows',
-    e,
-    fv: (v1: number, k1: Key, v2: number, k2: Key) => fv(v1, k1, v2, k2),
-    fk: (v1: number, k1: Key, v2: number, k2: Key) => fk(v1, k1, v2, k2),
-  })),
+  {
+    weight: 3,
+    arbitrary: fc.tuple(self, fc.func(fc.integer()), fc.func(arbKey())).map(([e, fv, fk]) => ({
+      t: 'windows',
+      e,
+      fv: (v1: number, k1: Key, v2: number, k2: Key) => fv(v1, k1, v2, k2),
+      fk: (v1: number, k1: Key, v2: number, k2: Key) => fk(v1, k1, v2, k2),
+    })),
+  },
 ]
 
 const arbIterRec = (self: fc.Arbitrary<Iter>): fc.MaybeWeightedArbitrary<Iter>[] => [
