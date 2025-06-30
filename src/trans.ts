@@ -1,6 +1,7 @@
 // biome-ignore lint/correctness/noUnusedImports: for jsdoc link
 import type * as X from '.'
 import {
+  type IdxIter,
   Iter,
   type KeyOf,
   type Maybe,
@@ -10,6 +11,7 @@ import {
   cInit,
   newIter,
 } from './base'
+import { newIdxed } from './create'
 
 /**
  * 取迭代器的一段。长度不够则忽略。
@@ -1468,3 +1470,49 @@ export const pop: {
   (v1, _k1, _v2, _k2) => v1,
   (_v1, k1, _v2, _k2) => k1,
 )
+
+/**
+ * 排序整个迭代器。
+ *
+ * 类似 {@linkcode Array.sort}。注意：会一次性读取所有值，所以迭代器不能无限长。
+ *
+ * @param cmp 函数。参数为二者的值和键，返回大小关系，大于则返回值大于 0，以此类推。
+ *
+ * @returns 方法，返回的迭代器为输入迭代器的升序排序。
+ *
+ * @example
+ * ```ts @import.meta.vitest
+ * expect(X.ofArr([2, 1, 4, 3]).c(
+ *   X.sortBy((a, _1, b, _2) => a - b),
+ *   X.toArr,
+ * )).toEqual([1, 2, 3, 4])
+ */
+export const sortBy: {
+  <T, K>(cmp: (v1: T, k1: K, v2: T, k2: K) => number): (self: Iter<T, K>) => IdxIter<T, K>
+} = cmp => self => {
+  self.k()
+  let val: ValOf<typeof self>[], key: KeyOf<typeof self>[], idx: number[]
+  return newIdxed(
+    () => {
+      if (idx != null) return idx.length
+      val = []
+      key = []
+      idx = []
+      self.e((v, k) => {
+        val.push(v)
+        key.push(k)
+        idx.push(idx.length)
+        return true
+      })
+      idx.sort((i, j) => cmp(val[i], key[i], val[j], key[j]))
+      return idx.length
+    },
+    i => ({ v: val[idx[i]], k: key[idx[i]] }),
+    (i, to, f) => {
+      for (; i < to; i++) {
+        if (!f(val[idx[i]], key[idx[i]])) return false
+      }
+      return true
+    },
+  )
+}

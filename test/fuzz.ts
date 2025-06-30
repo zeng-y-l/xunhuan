@@ -71,6 +71,7 @@ type IterBase<R extends Lazy> =
       e: Get<R>
       n: number
     }
+  | { t: 'sort'; e: Get<IterL> }
 
 type IdxIter = IterBase<Lazy<IdxIter>>
 
@@ -91,6 +92,7 @@ type Iter =
       inclusive: boolean
       last: boolean
     }
+type IterL = Lazy<Iter>
 
 type Folder = (acc: number, v: number, k: Key) => number
 
@@ -130,6 +132,7 @@ const forever = (e: Iter): boolean =>
           'enum',
           'windows',
           'next',
+          'sort',
         ),
       },
       ({ e }) => forever(e),
@@ -197,6 +200,7 @@ const arbIterLeaf = (): fc.Arbitrary<Iter>[] => [
 
 const arbIdxIterRec = <R>(
   self: fc.Arbitrary<R>,
+  iter: fc.Arbitrary<Iter>,
 ): fc.MaybeWeightedArbitrary<IterBase<Lazy<R>>>[] => [
   self.map(e => ({ t: 'enum', e })),
   fc.record({
@@ -252,10 +256,11 @@ const arbIdxIterRec = <R>(
       fk: (v1: number, k1: Key, v2: number, k2: Key) => fk(v1, k1, v2, k2),
     })),
   },
+  iter.map(e => ({ t: 'sort', e: take(e) })),
 ]
 
 const arbIterRec = (self: fc.Arbitrary<Iter>): fc.MaybeWeightedArbitrary<Iter>[] => [
-  ...arbIdxIterRec(self),
+  ...arbIdxIterRec(self, self),
   fc.tuple(self.map(take), arbMapper(self)).map(([e, f]) => ({ t: 'flatMap', e, f })),
   fc.tuple(self, arbMapper(fc.boolean())).map(([e, f]) => ({ t: 'takeWhile', e, f })),
   fc.record({
@@ -275,7 +280,7 @@ const arbIterRec = (self: fc.Arbitrary<Iter>): fc.MaybeWeightedArbitrary<Iter>[]
 ]
 
 const arbIterLet = fc.letrec<{ iter: Iter; idx: IdxIter }>(tie => ({
-  idx: arbOneof(arbOneof(...arbIdxIterLeaf()), ...arbIdxIterRec(tie('idx'))),
+  idx: arbOneof(arbOneof(...arbIdxIterLeaf()), ...arbIdxIterRec(tie('idx'), tie('iter'))),
   iter: arbOneof(arbOneof(...arbIterLeaf()), ...arbIterRec(tie('iter'))),
 }))
 
@@ -365,6 +370,9 @@ const iterBaseX = <R extends Lazy, Idx extends undefined>(
       while (n--) X.moveNext(iter)
       return iter
     })
+    .with({ t: 'sort' }, ({ e }) =>
+      iterX(e).c(X.sortBy((v1, k1, v2, k2) => v1 - v2 || +(k1! > k2!) - +(k2! > k1!))),
+    )
     .exhaustive()
 
 const iterIdxX = (e: IdxIter): X.IdxIter<number, Key> => iterBaseX(e, iterIdxX)
@@ -523,6 +531,11 @@ const iterE = (e: Iter): Iterable<[number, Key]> =>
         ([[v1, k1], [v2, k2]]) => [fv(v1, k1, v2, k2), fk(v1, k1, v2, k2)] as const,
       ),
     )
+    .with({ t: 'sort' }, ({ e }) => {
+      const arr = [...iterE(e)]
+      arr.sort(([v1, k1], [v2, k2]) => v1 - v2 || +(k1! > k2!) - +(k2! > k1!))
+      return arr
+    })
     .exhaustive()
 
 export const consumeE = (e: Consume, out: unknown[]) =>
