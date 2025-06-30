@@ -1359,7 +1359,7 @@ export const windowsByKV: {
 } = (val, key) => self =>
   windowsByKV_(val, key, self, false, undefined, undefined, undefined, undefined, undefined)
 
-export const windowsByKV_ = <T, K, U, L, Index extends undefined>(
+const windowsByKV_ = <T, K, U, L, Index extends undefined>(
   val: (v1: T, k1: K, v2: T, k2: K) => U,
   key: (v1: T, k1: K, v2: T, k2: K) => L,
   self: Iter<T, K, Index>,

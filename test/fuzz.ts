@@ -184,7 +184,6 @@ const arbIdxIterLeaf = (): fc.Arbitrary<IdxIter>[] => [
     .map(e => ({ t: 'obj', obj: Object.fromEntries(e) })),
   fc
     .tuple(fc.integer(), fc.integer(), fc.integer())
-    .filter(([, b, step]) => b * step > 0)
     .map(([from, b, step]) => ({ t: 'range', from, to: from + b, step })),
 ]
 
