@@ -4,6 +4,55 @@ import { type IdxIter, type Iter, type Maybe, type Yield, newIdxIter, newIter } 
 import { flatten, prepend } from './trans'
 
 /**
+ * 根据索引生成迭代器。内部使用。
+ *
+ * @param getLen 迭代器长度，自然数或无穷大。若需计算，则为函数，可能调用多次。
+ * @param idx 函数，输入索引（小于长度的自然数），获取对应键值。调用前调用过 `getLen`。
+ * @param each 函数，输入开始和结束位置（左闭右开）以及迭代函数，遍历区间每个值。类似 {@linkcode X.Iter.e}。调用后不会再调用函数。
+ *
+ * @returns 迭代器。
+ */
+export const newIdxed: {
+  <T, K>(
+    getLen: number | (() => number),
+    idx: (i: number) => Yield<T, K>,
+    each: (from: number, to: number, f: (v: T, k: K) => boolean) => boolean,
+  ): IdxIter<T, K>
+} = (getLen, idx, each) => _ofIdxed(0, getLen, idx, each)
+
+const _ofIdxed = <T, K>(
+  i: number,
+  getLen: number | (() => number),
+  idx: (i: number) => Yield<T, K>,
+  each: (from: number, to: number, f: (v: T, k: K) => boolean) => boolean,
+): IdxIter<T, K> => {
+  let init: Maybe<() => void>, len: Maybe<number>
+  if (typeof getLen === 'number') len = getLen as number
+  else {
+    init = () => {
+      len = getLen()
+    }
+  }
+  return newIdxIter(
+    () => (i < len! ? idx(i) : undefined),
+    () => {
+      i++
+    },
+    f => {
+      init?.()
+      return each(i, len!, f)
+    },
+    init,
+    (from, to) => {
+      len ??= (getLen as () => number)()
+      return _ofIdxed(i + from, Math.min(len, i + to), idx, each)
+    },
+    () => Math.max(0, len! - i),
+    i_ => (i + i_ < len! ? idx(i + i_) : undefined),
+  )
+}
+
+/**
  * 数组转迭代器。同时支持字符串等类数组对象。
  *
  * @param arr 数组（不能稀疏）。
@@ -25,25 +74,17 @@ import { flatten, prepend } from './trans'
  */
 export const ofArr: {
   <T>(arr: ArrayLike<T>): IdxIter<T, number>
-} = arr => _ofArr(arr, 0, arr.length)
-
-const _ofArr = <T>(arr: ArrayLike<T>, from: number, to: number): IdxIter<T, number> => {
-  let i = from
-  return newIdxIter(
-    () => (i < to ? { v: arr[i], k: i } : undefined),
-    () => i++,
-    f => {
+} = arr =>
+  newIdxed(
+    arr.length,
+    i => ({ v: arr[i], k: i }),
+    (i, to, f) => {
       for (; i < to; i++) {
         if (!f(arr[i], i)) return false
       }
       return true
     },
-    undefined,
-    (from, to_) => _ofArr(arr, i + from, Math.min(to, i + to_)),
-    () => Math.max(0, to - i),
-    i_ => (i + i_ < to ? { v: arr[i + i_], k: i + i_ } : undefined),
   )
-}
 
 /**
  * 原生迭代器转迭代器。
@@ -125,28 +166,21 @@ export const range: {
   (to?: number): IdxIter<number, undefined>
   (from: number, to: number, step?: number): IdxIter<number, undefined>
 } = (a = Infinity, b?: number, c?: number) => {
-  let x = b != null ? a : 0
+  let from = b != null ? a : 0
   let to = b ?? a
-  let step = c ?? (x < to ? 1 : -1)
-  return newIdxIter(
-    () => (step * (to - x) > 0 ? { v: x, k: undefined } : undefined),
-    () => {
-      x += step
-    },
-    f => {
-      for (; step * (to - x) > 0; x += step) {
-        if (!f(x, undefined)) return false
+  let step = c ?? (from < to ? 1 : -1)
+  return newIdxed(
+    step * (to - from) >= 0 ? Math.ceil((to - from) / step) : 0,
+    i => ({
+      v: from + i * step,
+      k: undefined,
+    }),
+    (i, to_, f) => {
+      for (; i < to_; i++) {
+        if (!f(from + i * step, undefined)) return false
       }
       return true
     },
-    undefined,
-    (from, to_) => {
-      let to1 = x + to_ * step
-      to1 = step > 0 ? Math.min(to1, to) : Math.max(to1, to)
-      return range(x + from * step, to1, step)
-    },
-    () => (step * (to - x) > 0 ? Math.ceil((to - x) / step) : 0),
-    i => (step * (to - x - i * step) > 0 ? { v: x + i * step, k: undefined } : undefined),
   )
 }
 
@@ -277,21 +311,14 @@ export const repeat: {
 export const repeatKV: {
   <T, K>(v: T, k: K, n?: number): IdxIter<T, K>
 } = (v, k, n = Infinity) => {
-  let i = 0
   let step = { v, k }
-  return newIdxIter(
-    () => (i < n ? step : undefined),
-    () => {
-      i++
-    },
-    f_ => {
-      for (; i < n; i++) if (!f_(v, k)) return false
+  return newIdxed(
+    n,
+    () => step,
+    (i, to, f) => {
+      for (; i < to; i++) if (!f(v, k)) return false
       return true
     },
-    undefined,
-    (from, to) => repeatKV(v, k, Math.min(to, n - i) - from),
-    () => Math.max(0, n - i),
-    i_ => (i + i_ < n ? step : undefined),
   )
 }
 
@@ -382,36 +409,19 @@ export const concat: {
 export const ofObj: {
   <T>(obj: Record<string, T> | ArrayLike<T>): IdxIter<T, string>
   (obj: object): IdxIter<unknown, string>
-} = <T>(obj: Record<string, T>) => _ofObj(obj, undefined, 0, undefined)
-
-const _ofObj = <T>(
-  obj: Record<string, T>,
-  keys: Maybe<string[]>,
-  from: number,
-  to: Maybe<number>,
-): IdxIter<T, string> => {
-  let i = from
-  let init = () => {
-    if (keys) return
-    keys = Object.keys(obj)
-    to = keys.length
-  }
-  return newIdxIter(
-    () => (i < to! ? { v: obj[keys![i]], k: keys![i] } : undefined),
-    () => i++,
-    f => {
-      init()
-      for (; i < to!; i++) {
+} = <T>(obj: Record<string, T>) => {
+  let keys: string[] | undefined
+  return newIdxed(
+    () => {
+      keys ??= Object.keys(obj)
+      return keys.length
+    },
+    i => ({ v: obj[keys![i]], k: keys![i] }),
+    (i, to, f) => {
+      for (; i < to; i++) {
         if (!f(obj[keys![i]], keys![i])) return false
       }
       return true
     },
-    init,
-    (from, to_) => {
-      init()
-      return _ofObj(obj, keys, i + from, Math.min(to!, i + to_))
-    },
-    () => Math.max(0, to! - i),
-    i_ => (i + i_ < to! ? { v: obj[keys![i + i_]], k: keys![i + i_] } : undefined),
   )
 }
