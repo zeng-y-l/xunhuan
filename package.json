@@ -1,10 +1,10 @@
 {
   "name": "xunhuan",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "description": "小而快的迭代器库",
   "keywords": ["iterator", "functional", "lazy", "collection", "util"],
-  "author": "ZengYL <zeng-y-l@qq.com>",
+  "author": "ZengYL <zeng-y-l@outlook.com>",
   "license": "MIT",
   "repository": "github:zeng-y-l/xunhuan",
   "types": "src/index.ts",
