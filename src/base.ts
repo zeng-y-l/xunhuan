@@ -169,6 +169,7 @@ export class Iter<out T, out K = unknown, out Index extends undefined = undefine
     if (V) {
       let ready = !init
       let used = false
+      let end = false
       this.i =
         init &&
         (() => {
@@ -178,7 +179,10 @@ export class Iter<out T, out K = unknown, out Index extends undefined = undefine
       this.g = () => {
         V.expect(ready).toBe(true)
         V.expect(used).toBe(false)
-        return get()
+        const r = get()
+        if (end) V.expect(r).toBeUndefined()
+        else end = !r
+        return r
       }
       this.n = () => {
         V.expect(ready).toBe(true)
@@ -188,7 +192,14 @@ export class Iter<out T, out K = unknown, out Index extends undefined = undefine
       this.e = f => {
         V.expect(used).toBe(false)
         used = true
-        return each(f)
+        let cont = true
+        const r = each((v, k) => {
+          V.expect(cont).toBe(true)
+          cont = f(v, k)
+          return cont
+        })
+        V.expect(r).toBe(cont)
+        return r
       }
       this.s =
         slice &&
@@ -207,7 +218,10 @@ export class Iter<out T, out K = unknown, out Index extends undefined = undefine
         (() => {
           V.expect(ready).toBe(true)
           V.expect(used).toBe(false)
-          return length()
+          const r = length()
+          V.expect(r).toBeGreaterThanOrEqual(0)
+          V.expect(r === Infinity || r % 1 === 0).toBe(true)
+          return r
         })
       this.d =
         index &&
@@ -216,7 +230,9 @@ export class Iter<out T, out K = unknown, out Index extends undefined = undefine
           V.expect(used).toBe(false)
           V.expect(i).toBeGreaterThanOrEqual(0)
           V.expect(i % 1).toBe(0)
-          return index(i)
+          const r = index(i)
+          if (end) V.expect(r).toBeUndefined()
+          return r
         })
     }
   }
