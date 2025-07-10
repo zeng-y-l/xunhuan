@@ -30,7 +30,14 @@ declare const V: Maybe<typeof import('vitest')>
 export type IdxIter<T, K = unknown> = Iter<T, K, never>
 
 /**
- * 迭代器。惰性求值、不可修改，支持无限长。{@linkcode X.IdxIter} 支持类型安全的随机访问。
+ * 长度固定且有限、支持随机访问、双端访问的迭代器。
+ *
+ * @see {@linkcode X.Iter}
+ */
+export type BidiIter<T, K = unknown> = Iter<T, K, never, never>
+
+/**
+ * 迭代器。惰性求值、不可修改，支持无限长。{@linkcode X.IdxIter} 支持类型安全的随机访问，{@linkcode X.BidiIter} 支持双端访问。
  *
  * 与 {@linkcode Iterator} 类似，但只支持发出值，不支持接收值和返回值。
  * 此外，还支持同时发出键和值，无需用元组等方式模拟键值对。若不关心键，留空类型参数 `K` 即可。
@@ -40,6 +47,8 @@ export type IdxIter<T, K = unknown> = Iter<T, K, never>
  * 迭代器结束后就不会再生成值。
  *
  * 大部分方法会消耗迭代器，若不消耗则有标注。消耗的迭代器不能再用，以防内部状态错误。
+ *
+ * 若要随机访问，则需长度固定；若要双端迭代，则还需长度有限。
  *
  * @example
  * ```ts @import.meta.vitest
@@ -64,9 +73,21 @@ export type IdxIter<T, K = unknown> = Iter<T, K, never>
  * expect(iter.c(X.nth(2))).toEqual(1)
  * expect(iter.c(X.nth(1))).toEqual(2)
  * expect(effect).toEqual([3, 2])
+ *
+ * // 双端迭代
+ * expect(X.ofArr([1, 2, 3, 4]).c(
+ *   X.skip(1),
+ *   X.rev,
+ *   X.toArr,
+ * )).toEqual([4, 3, 2])
  * ```
  */
-export class Iter<out T, out K = unknown, out Index extends undefined = undefined> {
+export class Iter<
+  out T,
+  out K = unknown,
+  out Index extends undefined = undefined,
+  out Bidi extends undefined = undefined,
+> {
   /**
    * @internal
    * init
@@ -79,7 +100,7 @@ export class Iter<out T, out K = unknown, out Index extends undefined = undefine
    *
    * 调用前，应调用过 {@linkcode i}。
    *
-   * @returns 当前的一项。
+   * @returns 第一项（当前的）。
    */
   declare readonly g: () => Maybe<Yield<T, K>>
 
@@ -105,6 +126,36 @@ export class Iter<out T, out K = unknown, out Index extends undefined = undefine
 
   /**
    * @internal
+   * right get
+   *
+   * 调用前，应调用过 {@linkcode i}。
+   *
+   * @returns 最后一项（当前的）。
+   */
+  declare readonly t: (() => Maybe<Yield<T, K>>) | Index | Bidi
+
+  /**
+   * @internal
+   * right next
+   *
+   * 调用前，应调用过 {@linkcode i}。
+   */
+  declare readonly x: (() => void) | Index | Bidi
+
+  /**
+   * @internal
+   * right each
+   *
+   * 调用后，不应再调用其他方法。
+   *
+   * @param f 函数。每个值调用一次，从右到左。若停止，则返回 `false`。
+   *
+   * @returns 若是停止的，则返回 `false`。
+   */
+  declare readonly h: ((f: (v: T, k: K) => boolean) => boolean) | Index | Bidi
+
+  /**
+   * @internal
    * slice
    *
    * 调用后，不应再调用其他方法。
@@ -114,7 +165,7 @@ export class Iter<out T, out K = unknown, out Index extends undefined = undefine
    *
    * @returns 迭代器。
    */
-  declare readonly s: ((from: number, to: number) => Iter<T, K, Index>) | Index
+  declare readonly s: ((from: number, to: number) => Iter<T, K, Index, Bidi>) | Index
 
   /**
    * @internal
@@ -122,7 +173,7 @@ export class Iter<out T, out K = unknown, out Index extends undefined = undefine
    *
    * 调用前，应调用过 {@linkcode i}。
    *
-   * @returns 长度。自然数或无穷大。
+   * @returns 长度。自然数或无穷大。若支持双向迭代，则必须有限。
    */
   declare readonly l: (() => number) | Index
 
@@ -142,7 +193,7 @@ export class Iter<out T, out K = unknown, out Index extends undefined = undefine
    * @internal
    * used
    */
-  declare u: boolean
+  private declare u: boolean
 
   /**
    * @internal
@@ -155,6 +206,9 @@ export class Iter<out T, out K = unknown, out Index extends undefined = undefine
     slice: typeof this.s,
     length: typeof this.l,
     index: typeof this.d,
+    rget: typeof this.t,
+    rnext: typeof this.x,
+    reach: typeof this.h,
   ) {
     this.i = init
     this.g = get
@@ -163,6 +217,9 @@ export class Iter<out T, out K = unknown, out Index extends undefined = undefine
     this.s = slice
     this.l = length
     this.d = index
+    this.t = rget
+    this.x = rnext
+    this.h = reach
 
     this.u = false
 
@@ -234,6 +291,37 @@ export class Iter<out T, out K = unknown, out Index extends undefined = undefine
           if (end) V.expect(r).toBeUndefined()
           return r
         })
+      this.t =
+        rget &&
+        (() => {
+          V.expect(ready).toBe(true)
+          V.expect(used).toBe(false)
+          const r = rget()
+          if (end) V.expect(r).toBeUndefined()
+          else end = !r
+          return r
+        })
+      this.x =
+        rnext &&
+        (() => {
+          V.expect(ready).toBe(true)
+          V.expect(used).toBe(false)
+          return rnext()
+        })
+      this.h =
+        reach &&
+        (f => {
+          V.expect(used).toBe(false)
+          used = true
+          let cont = true
+          const r = reach((v, k) => {
+            V.expect(cont).toBe(true)
+            cont = f(v, k)
+            return cont
+          })
+          V.expect(r).toBe(cont)
+          return r
+        })
     }
   }
 
@@ -267,27 +355,49 @@ export class Iter<out T, out K = unknown, out Index extends undefined = undefine
   }
 }
 
-export const newIter = <T, K>(
-  get: Iter<T, K>['g'],
-  next: Iter<T, K>['n'],
-  each: Iter<T, K>['e'],
-  init?: Iter<T, K>['i'],
-  slice?: Iter<T, K>['s'],
-  length?: Iter<T, K>['l'],
-  index?: Iter<T, K>['d'],
-): Iter<T, K> => new Iter<T, K>(get, next, each, init, slice, length, index)
+export const newIter: {
+  <T, K, Index extends undefined, Bidi extends undefined>(
+    get: Iter<T, K, Index, Bidi>['g'],
+    next: Iter<T, K, Index, Bidi>['n'],
+    each: Iter<T, K, Index, Bidi>['e'],
+    init: Iter<T, K, Index, Bidi>['i'],
+    slice: Iter<T, K, Index, Bidi>['s'],
+    length: Iter<T, K, Index, Bidi>['l'],
+    index: Iter<T, K, Index, Bidi>['d'],
+    rget: Iter<T, K, Index, Bidi>['t'],
+    rnext: Iter<T, K, Index, Bidi>['x'],
+    reach: Iter<T, K, Index, Bidi>['h'],
+  ): Iter<T, K, Index, Bidi>
 
-export const newIdxIter: {
+  <T, K, Index extends undefined>(
+    get: Iter<T, K, Index>['g'],
+    next: Iter<T, K, Index>['n'],
+    each: Iter<T, K, Index>['e'],
+    init: Iter<T, K, Index>['i'],
+    slice: Iter<T, K, Index>['s'],
+    length: Iter<T, K, Index>['l'],
+    index: Iter<T, K, Index>['d'],
+    rget?: Iter<T, K, Index>['t'],
+    rnext?: Iter<T, K, Index>['x'],
+    reach?: Iter<T, K, Index>['h'],
+  ): Iter<T, K, Index>
+
   <T, K>(
-    get: IdxIter<T, K>['g'],
-    next: IdxIter<T, K>['n'],
-    each: IdxIter<T, K>['e'],
-    init: IdxIter<T, K>['i'],
-    slice: IdxIter<T, K>['s'],
-    length: IdxIter<T, K>['l'],
-    index: IdxIter<T, K>['d'],
-  ): IdxIter<T, K>
-} = newIter as any
+    get: Iter<T, K>['g'],
+    next: Iter<T, K>['n'],
+    each: Iter<T, K>['e'],
+    init?: Iter<T, K>['i'],
+    slice?: Iter<T, K>['s'],
+    length?: Iter<T, K>['l'],
+    index?: Iter<T, K>['d'],
+    rget?: Iter<T, K>['t'],
+    rnext?: Iter<T, K>['x'],
+    reach?: Iter<T, K>['h'],
+  ): Iter<T, K>
+} = ((get, next, each, init, slice, length, index, rget, rnext, reach) =>
+  new Iter(get, next, each, init, slice, length, index, rget, rnext, reach)) satisfies <T, K>(
+  ...args: ConstructorParameters<typeof Iter<T, K>>
+) => Iter<T, K>
 
 export const cInit = <B extends Maybe<() => void>>(a: Maybe<() => void>, b: B) => {
   if (!a) return b

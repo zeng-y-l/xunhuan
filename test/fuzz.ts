@@ -27,7 +27,7 @@ interface Lazy<T = any> {
 }
 type Get<L extends Lazy> = L['__lazy']
 
-type IterBase<R extends Lazy> =
+type BidiIterR<R extends Lazy> =
   | { t: 'empty' }
   | { t: 'once'; v: number; k: Key }
   | { t: 'repeat'; n: number; v: number; k: Key }
@@ -38,6 +38,19 @@ type IterBase<R extends Lazy> =
   | { t: 'map'; e: Get<R>; fv: Mapper<number>; fk: Mapper<Key> }
   | { t: 'skip'; e: Get<R>; n: number }
   | { t: 'slice'; e: Get<R>; from: number; to: number }
+  | {
+      t: 'next'
+      e: Get<R>
+      n: number
+    }
+  | { t: 'sort'; e: Get<IterL> }
+  | { t: 'rev'; e: Get<BidiIterL> }
+
+type BidiIter = BidiIterR<Lazy<BidiIter>>
+type BidiIterL = Lazy<BidiIter>
+
+type IdxIterR<R extends Lazy> =
+  | BidiIterR<R>
   | { t: 'chain2'; e1: Get<R>; e2: Get<R> }
   | {
       t: 'zip2'
@@ -66,17 +79,11 @@ type IterBase<R extends Lazy> =
       fv: (v1: number, k1: Key, v2: number, k2: Key) => number
       fk: (v1: number, k1: Key, v2: number, k2: Key) => Key
     }
-  | {
-      t: 'next'
-      e: Get<R>
-      n: number
-    }
-  | { t: 'sort'; e: Get<IterL> }
 
-type IdxIter = IterBase<Lazy<IdxIter>>
+type IdxIter = IdxIterR<Lazy<IdxIter>>
 
 type Iter =
-  | IterBase<Lazy<Iter>>
+  | IdxIterR<Lazy<Iter>>
   | { t: 'iter'; arr: number[] }
   | { t: 'succ'; f: (v: number) => number; init: number }
   | { t: 'flatMap'; e: Iter; f: Mapper<Iter> }
@@ -97,23 +104,23 @@ type IterL = Lazy<Iter>
 type Folder = (acc: number, v: number, k: Key) => number
 
 export type Consume =
-  | { t: 'all' | 'any' | 'find'; e: ConsumeRec; f: Mapper<boolean> }
+  | { t: 'all' | 'any' | 'find'; e: ConsumeIter; f: Mapper<boolean> }
   | {
       t: 'arr' | 'iter' | 'obj' | 'groupObj' | 'first' | 'last' | 'count' | 'map' | 'set'
-      e: ConsumeRec
+      e: ConsumeIter
     }
-  | { t: 'fold'; e: ConsumeRec; f: Folder; init: number }
-  | { t: 'fold1'; e: ConsumeRec; f: Folder }
+  | { t: 'fold'; e: ConsumeIter; f: Folder; init: number }
+  | { t: 'fold1'; e: ConsumeIter; f: Folder }
 
-type ConsumeBase<R extends Lazy> =
+type ConsumeR<R extends Lazy> =
   | { t: 'next'; e: Get<R>; n: number }
-  | { t: 'length'; e: Get<ConsumeIdxRecL> }
-  | { t: 'index'; e: Get<ConsumeIdxRecL>; i: number }
-  | { t: 'partitionPoint' | 'binarySearch'; e: Get<ConsumeIdxRecL>; x: number }
+  | { t: 'length'; e: Get<ConsumeIdxL> }
+  | { t: 'index'; e: Get<ConsumeIdxL>; i: number }
+  | { t: 'partitionPoint' | 'binarySearch'; e: Get<ConsumeIdxL>; x: number }
 
-type ConsumeRec = ConsumeBase<Lazy<ConsumeRec>> | { t: 'leaf'; e: Iter }
-type ConsumeIdxRec = ConsumeBase<ConsumeIdxRecL> | { t: 'leafIdx'; e: IdxIter }
-type ConsumeIdxRecL = Lazy<ConsumeIdxRec>
+type ConsumeIter = ConsumeR<Lazy<ConsumeIter>> | { t: 'leaf'; e: Iter }
+type ConsumeIdx = ConsumeR<ConsumeIdxL> | { t: 'leafIdx'; e: IdxIter }
+type ConsumeIdxL = Lazy<ConsumeIdx>
 
 const forever = (e: Iter): boolean =>
   match(e)
@@ -133,6 +140,7 @@ const forever = (e: Iter): boolean =>
           'windows',
           'next',
           'sort',
+          'rev',
         ),
       },
       ({ e }) => forever(e),
@@ -142,11 +150,11 @@ const forever = (e: Iter): boolean =>
     .with({ t: P.union('zipAll2', 'chain2') }, ({ e1, e2 }) => forever(e1) || forever(e2))
     .exhaustive()
 
-const take = <T extends Iter>(e: T): T | IterBase<Lazy<T>> =>
+const take = <T extends Iter>(e: T): T | BidiIterR<Lazy<T>> =>
   forever(e) ? { t: 'slice', e, from: 0, to: 50 } : e
 
-const inc = (e: ConsumeIdxRec): ConsumeIdxRec =>
-  match<ConsumeIdxRec, ConsumeIdxRec>(e)
+const inc = (e: ConsumeIdx): ConsumeIdx =>
+  match<ConsumeIdx, ConsumeIdx>(e)
     .with({ t: 'leafIdx' }, ({ e }) => ({
       t: 'leafIdx',
       e: {
@@ -175,7 +183,7 @@ const arbFolder = fc.func(fc.integer()).map<Folder>(f => (acc, v, k) => f(acc, v
 const arbOneof = <T>(...args: (false | fc.MaybeWeightedArbitrary<T>)[]) =>
   fc.oneof(...args.filter(x => x !== false))
 
-const arbIdxIterLeaf = (): fc.Arbitrary<IdxIter>[] => [
+const arbBidiIterLeaf = (): fc.Arbitrary<BidiIter>[] => [
   fc.constant({ t: 'empty' }),
   fc.tuple(fc.integer(), arbKey()).map(([v, k]) => ({ t: 'once', v, k })),
   fc
@@ -190,18 +198,21 @@ const arbIdxIterLeaf = (): fc.Arbitrary<IdxIter>[] => [
     .map(([from, b, step]) => ({ t: 'range', from, to: from + b, step })),
 ]
 
+const arbIdxIterLeaf = arbBidiIterLeaf
+
 const arbIterLeaf = (): fc.Arbitrary<Iter>[] => [
-  ...arbIdxIterLeaf(),
+  ...arbBidiIterLeaf(),
   fc.array(fc.integer()).map(arr => ({ t: 'iter', arr })),
   fc
     .tuple(fc.integer(), fc.func(fc.integer()))
     .map(([init, f]) => ({ t: 'succ', f: a => f(a), init })),
 ]
 
-const arbIdxIterRec = <R>(
+const arbBidiIterR = <R>(
   self: fc.Arbitrary<R>,
+  bidi: fc.Arbitrary<BidiIter>,
   iter: fc.Arbitrary<Iter>,
-): fc.MaybeWeightedArbitrary<IterBase<Lazy<R>>>[] => [
+): fc.MaybeWeightedArbitrary<BidiIterR<Lazy<R>>>[] => [
   self.map(e => ({ t: 'enum', e })),
   fc.record({
     t: fc.constant('map'),
@@ -222,6 +233,19 @@ const arbIdxIterRec = <R>(
     e: self,
     n: fc.nat(10),
   }),
+  iter.map(e => ({ t: 'sort', e: take(e) })),
+  {
+    weight: 3,
+    arbitrary: bidi.map(e => ({ t: 'rev', e: take(e) })),
+  },
+]
+
+const arbIdxIterR = <R>(
+  self: fc.Arbitrary<R>,
+  bidi: fc.Arbitrary<BidiIter>,
+  iter: fc.Arbitrary<Iter>,
+): fc.MaybeWeightedArbitrary<IdxIterR<Lazy<R>>>[] => [
+  ...arbBidiIterR(self, bidi, iter),
   fc.tuple(self, self).map(([e1, e2]) => ({ t: 'chain2', e1, e2 })),
   fc.record({
     t: fc.constant('zip2'),
@@ -256,11 +280,13 @@ const arbIdxIterRec = <R>(
       fk: (v1: number, k1: Key, v2: number, k2: Key) => fk(v1, k1, v2, k2),
     })),
   },
-  iter.map(e => ({ t: 'sort', e: take(e) })),
 ]
 
-const arbIterRec = (self: fc.Arbitrary<Iter>): fc.MaybeWeightedArbitrary<Iter>[] => [
-  ...arbIdxIterRec(self, self),
+const arbIterR = (
+  self: fc.Arbitrary<Iter>,
+  bidi: fc.Arbitrary<BidiIter>,
+): fc.MaybeWeightedArbitrary<Iter>[] => [
+  ...arbIdxIterR(self, bidi, self),
   fc.tuple(self.map(take), arbMapper(self)).map(([e, f]) => ({ t: 'flatMap', e, f })),
   fc.tuple(self, arbMapper(fc.boolean())).map(([e, f]) => ({ t: 'takeWhile', e, f })),
   fc.record({
@@ -279,18 +305,26 @@ const arbIterRec = (self: fc.Arbitrary<Iter>): fc.MaybeWeightedArbitrary<Iter>[]
   }),
 ]
 
-const arbIterLet = fc.letrec<{ iter: Iter; idx: IdxIter }>(tie => ({
-  idx: arbOneof(arbOneof(...arbIdxIterLeaf()), ...arbIdxIterRec(tie('idx'), tie('iter'))),
-  iter: arbOneof(arbOneof(...arbIterLeaf()), ...arbIterRec(tie('iter'))),
+const arbIterLet = fc.letrec<{ iter: Iter; idx: IdxIter; bidi: BidiIter }>(tie => ({
+  iter: arbOneof(arbOneof(...arbIterLeaf()), ...arbIterR(tie('iter'), tie('bidi'))),
+  idx: arbOneof(
+    arbOneof(...arbIdxIterLeaf()),
+    ...arbIdxIterR(tie('idx'), tie('bidi'), tie('iter')),
+  ),
+  bidi: arbOneof(
+    arbOneof(...arbBidiIterLeaf()),
+    ...arbBidiIterR(tie('bidi'), tie('bidi'), tie('iter')),
+  ),
 }))
 
 const arbIter = arbIterLet.iter.map(take)
 const arbIdxIter = arbIterLet.idx.map(take)
+// const arbBidiIter = arbIterLet.bidi.map(take)
 
-const arbConsumeBase = <R>(
+const arbConsumeR = <R>(
   self: fc.Arbitrary<R>,
-  idx: fc.Arbitrary<ConsumeIdxRec>,
-): fc.Arbitrary<ConsumeBase<Lazy<R>>>[] => [
+  idx: fc.Arbitrary<ConsumeIdx>,
+): fc.Arbitrary<ConsumeR<Lazy<R>>>[] => [
   fc.tuple(self, fc.nat(20)).map(([e, n]) => ({ t: 'next', e, n })),
   idx.map(e => ({ t: 'length', e })),
   fc.tuple(idx, fc.nat(20)).map(([e, i]) => ({ t: 'index', e, i })),
@@ -301,54 +335,54 @@ const arbConsumeBase = <R>(
   }),
 ]
 
-const { consume: arbConsumeRec } = fc.letrec<{
-  consume: ConsumeRec
-  idx: ConsumeIdxRec
+const { consume: arbConsumeIter } = fc.letrec<{
+  consume: ConsumeIter
+  idx: ConsumeIdx
 }>(tie => ({
-  consume: arbOneof<ConsumeRec>(
+  consume: arbOneof<ConsumeIter>(
     arbIter.map(e => ({ t: 'leaf', e })),
-    ...arbConsumeBase(tie('consume'), tie('idx')),
+    ...arbConsumeR(tie('consume'), tie('idx')),
   ),
-  idx: arbOneof<ConsumeIdxRec>(
+  idx: arbOneof<ConsumeIdx>(
     arbIdxIter.map(e => ({ t: 'leafIdx', e })),
-    ...arbConsumeBase(tie('idx'), tie('idx')),
+    ...arbConsumeR(tie('idx'), tie('idx')),
   ),
 }))
 
 export const arbConsume = arbOneof<Consume>(
-  arbConsumeRec.map(e => ({ t: 'iter', e })),
+  arbConsumeIter.map(e => ({ t: 'iter', e })),
   fc.record({
     t: fc.constantFrom('arr', 'obj', 'groupObj', 'first'),
-    e: arbConsumeRec,
+    e: arbConsumeIter,
   }),
   fc.record({
     t: fc.constantFrom('last', 'count'),
-    e: arbConsumeRec,
+    e: arbConsumeIter,
   }),
   fc.record({
     t: fc.constantFrom('all', 'any', 'find'),
-    e: arbConsumeRec,
+    e: arbConsumeIter,
     f: arbMapper(fc.boolean()),
   }),
   fc.record({
     t: fc.constantFrom('fold', 'fold1'),
-    e: arbConsumeRec,
+    e: arbConsumeIter,
     f: arbFolder,
     init: fc.integer(),
   }),
   fc.record({
     t: fc.constantFrom('fold', 'fold1'),
-    e: arbConsumeRec,
+    e: arbConsumeIter,
     f: arbFolder,
     init: fc.integer(),
   }),
 )
 
-const iterBaseX = <R extends Lazy, Idx extends undefined>(
-  e: IterBase<R>,
-  rec: (r: Get<R>) => X.Iter<number, Key, Idx>,
-): X.Iter<number, Key, Idx> =>
-  match<IterBase<R>, X.Iter<number, Key, Idx>>(e)
+const iterBidiRX = <R extends Lazy, Idx extends undefined, Bidi extends undefined>(
+  e: BidiIterR<R>,
+  rec: (r: Get<R>) => X.Iter<number, Key, Idx, Bidi>,
+): X.Iter<number, Key, Idx, Bidi> =>
+  match<BidiIterR<R>, X.Iter<number, Key, Idx, Bidi>>(e)
     .with({ t: 'empty' }, () => X.empty())
     .with({ t: 'once' }, ({ v, k }) => X.onceKV(v, k))
     .with({ t: 'repeat' }, ({ n, v, k }) => X.repeatKV(v, k, n))
@@ -359,11 +393,6 @@ const iterBaseX = <R extends Lazy, Idx extends undefined>(
     .with({ t: 'map' }, ({ e, fv, fk }) => rec(e).c(X.mapKV(fv, fk)))
     .with({ t: 'slice' }, ({ e, from, to }) => rec(e).c(X.slice(from, to)))
     .with({ t: 'skip' }, ({ e, n }) => rec(e).c(X.skip(n)))
-    .with({ t: 'zip2' }, ({ e1, e2, fv, fk }) => rec(e1).c(X.zipByKV(rec(e2), fv, fk)))
-    .with({ t: 'chain2' }, ({ e1, e2 }) => rec(e2).c(X.prepend(rec(e1))))
-    .with({ t: 'zipAll2' }, ({ e1, e2, fv, fk }) => rec(e1).c(X.zipAllByKV(rec(e2), fv, fk)))
-    .with({ t: 'chunk' }, ({ e, n, last, f }) => rec(e).c(X.chunk(n, last), X.map(f)))
-    .with({ t: 'windows' }, ({ e, fv, fk }) => rec(e).c(X.windowsByKV(fv, fk)))
     .with({ t: 'next' }, ({ e, n }) => {
       const iter = rec(e)
       X.current(iter)
@@ -373,9 +402,24 @@ const iterBaseX = <R extends Lazy, Idx extends undefined>(
     .with({ t: 'sort' }, ({ e }) =>
       iterX(e).c(X.sortBy((v1, k1, v2, k2) => v1 - v2 || +(k1! > k2!) - +(k2! > k1!))),
     )
+    .with({ t: 'rev' }, ({ e }) => iterBidiX(e).c(X.rev))
     .exhaustive()
 
-const iterIdxX = (e: IdxIter): X.IdxIter<number, Key> => iterBaseX(e, iterIdxX)
+const iterBidiX = (e: BidiIter): X.BidiIter<number, Key> => iterBidiRX(e, iterBidiX)
+
+const iterIdxRX = <R extends Lazy, Idx extends undefined>(
+  e: IdxIterR<R>,
+  rec: (r: Get<R>) => X.Iter<number, Key, Idx>,
+): X.Iter<number, Key, Idx> =>
+  match<IdxIterR<R>, X.Iter<number, Key, Idx>>(e)
+    .with({ t: 'zip2' }, ({ e1, e2, fv, fk }) => rec(e1).c(X.zipByKV(rec(e2), fv, fk)))
+    .with({ t: 'chain2' }, ({ e1, e2 }) => rec(e2).c(X.prepend(rec(e1))))
+    .with({ t: 'zipAll2' }, ({ e1, e2, fv, fk }) => rec(e1).c(X.zipAllByKV(rec(e2), fv, fk)))
+    .with({ t: 'chunk' }, ({ e, n, last, f }) => rec(e).c(X.chunk(n, last), X.map(f)))
+    .with({ t: 'windows' }, ({ e, fv, fk }) => rec(e).c(X.windowsByKV(fv, fk)))
+    .otherwise(e => iterBidiRX(e, rec))
+
+const iterIdxX = (e: IdxIter): X.IdxIter<number, Key> => iterIdxRX(e, iterIdxX)
 
 const iterX = (e: Iter): X.Iter<number, Key> =>
   match<Iter, X.Iter<number, Key>>(e)
@@ -389,48 +433,48 @@ const iterX = (e: Iter): X.Iter<number, Key> =>
     .with({ t: 'splitBy' }, ({ e, fp, fm, inclusive, last }) =>
       iterX(e).c(X.splitBy(fp, inclusive, last), X.map(fm)),
     )
-    .otherwise(e => iterBaseX(e, iterX))
+    .otherwise(e => iterIdxRX(e, iterX))
 
 export const consumeX = (e: Consume, out: unknown[]) =>
   match(e)
-    .with({ t: 'arr' }, ({ e }) => X.toArr(consumeRecX(e, out)))
-    .with({ t: 'iter' }, ({ e }) => Array.from(X.toIter(consumeRecX(e, out))))
+    .with({ t: 'arr' }, ({ e }) => X.toArr(consumeIterX(e, out)))
+    .with({ t: 'iter' }, ({ e }) => Array.from(X.toIter(consumeIterX(e, out))))
     .with({ t: 'obj' }, ({ e }) =>
-      consumeRecX(e, out).c(
+      consumeIterX(e, out).c(
         X.mapK((_, k) => String(k)),
         X.toObj,
       ),
     )
     .with({ t: 'groupObj' }, ({ e }) =>
-      consumeRecX(e, out).c(
+      consumeIterX(e, out).c(
         X.mapK((_, k) => String(k)),
         X.groupObj,
       ),
     )
-    .with({ t: 'first' }, ({ e }) => X.first(consumeRecX(e, out)))
-    .with({ t: 'last' }, ({ e }) => X.last(consumeRecX(e, out)))
-    .with({ t: 'count' }, ({ e }) => consumeRecX(e, out).c(X.count))
-    .with({ t: 'map' }, ({ e }) => consumeRecX(e, out).c(X.toMap))
-    .with({ t: 'set' }, ({ e }) => consumeRecX(e, out).c(X.toSet))
-    .with({ t: 'all' }, ({ e, f }) => consumeRecX(e, out).c(X.all(f)))
-    .with({ t: 'any' }, ({ e, f }) => consumeRecX(e, out).c(X.any(f)))
-    .with({ t: 'find' }, ({ e, f }) => consumeRecX(e, out).c(X.find(f)))
-    .with({ t: 'fold' }, ({ e, f, init }) => consumeRecX(e, out).c(X.fold(f, init)))
-    .with({ t: 'fold1' }, ({ e, f }) => consumeRecX(e, out).c(X.fold1(f)))
+    .with({ t: 'first' }, ({ e }) => X.first(consumeIterX(e, out)))
+    .with({ t: 'last' }, ({ e }) => X.last(consumeIterX(e, out)))
+    .with({ t: 'count' }, ({ e }) => consumeIterX(e, out).c(X.count))
+    .with({ t: 'map' }, ({ e }) => consumeIterX(e, out).c(X.toMap))
+    .with({ t: 'set' }, ({ e }) => consumeIterX(e, out).c(X.toSet))
+    .with({ t: 'all' }, ({ e, f }) => consumeIterX(e, out).c(X.all(f)))
+    .with({ t: 'any' }, ({ e, f }) => consumeIterX(e, out).c(X.any(f)))
+    .with({ t: 'find' }, ({ e, f }) => consumeIterX(e, out).c(X.find(f)))
+    .with({ t: 'fold' }, ({ e, f, init }) => consumeIterX(e, out).c(X.fold(f, init)))
+    .with({ t: 'fold1' }, ({ e, f }) => consumeIterX(e, out).c(X.fold1(f)))
     .exhaustive()
 
-const consumeRecX = (e: ConsumeRec, out: unknown[]): X.Iter<number, Key> =>
+const consumeIterX = (e: ConsumeIter, out: unknown[]): X.Iter<number, Key> =>
   match(e)
     .with({ t: 'leaf' }, ({ e }) => iterX(e))
-    .otherwise(e => consumeBaseX(e, out, consumeRecX))
+    .otherwise(e => consumeRX(e, out, consumeIterX))
 
-const consumeIdxRecX = (e: ConsumeIdxRec, out: unknown[]): X.IdxIter<number, Key> =>
+const consumeIdxX = (e: ConsumeIdx, out: unknown[]): X.IdxIter<number, Key> =>
   match(e)
     .with({ t: 'leafIdx' }, ({ e }) => iterIdxX(e))
-    .otherwise(e => consumeBaseX(e, out, consumeIdxRecX))
+    .otherwise(e => consumeRX(e, out, consumeIdxX))
 
-const consumeBaseX = <R, I extends X.Iter<number, Key>>(
-  e: ConsumeBase<Lazy<R>>,
+const consumeRX = <R, I extends X.Iter<number, Key>>(
+  e: ConsumeR<Lazy<R>>,
   out: unknown[],
   r: (e: R, out: unknown[]) => I,
 ): I | X.IdxIter<number, Key> =>
@@ -444,22 +488,22 @@ const consumeBaseX = <R, I extends X.Iter<number, Key>>(
       return i
     })
     .with({ t: 'length' }, ({ e }) => {
-      const i = consumeIdxRecX(e, out)
+      const i = consumeIdxX(e, out)
       out.push(X.length(i))
       return i
     })
     .with({ t: 'index' }, ({ e, i }) => {
-      const iter = consumeIdxRecX(e, out)
+      const iter = consumeIdxX(e, out)
       out.push(iter.c(X.nth(i)))
       return iter
     })
     .with({ t: 'partitionPoint' }, ({ e, x }) => {
-      const iter = consumeIdxRecX(e, out) as X.IdxIter<number, number>
+      const iter = consumeIdxX(e, out) as X.IdxIter<number, number>
       out.push(iter.c(X.partitionPoint((_, k) => k > x)))
       return iter
     })
     .with({ t: 'binarySearch' }, ({ e, x }) => {
-      const iter = consumeIdxRecX(e, out) as X.IdxIter<number, number>
+      const iter = consumeIdxX(e, out) as X.IdxIter<number, number>
       out.push(iter.c(X.binarySearchK(x)))
       return iter
     })
@@ -536,48 +580,49 @@ const iterE = (e: Iter): Iterable<[number, Key]> =>
       arr.sort(([v1, k1], [v2, k2]) => v1 - v2 || +(k1! > k2!) - +(k2! > k1!))
       return arr
     })
+    .with({ t: 'rev' }, ({ e }) => E.reverse(iterE(e)))
     .exhaustive()
 
 export const consumeE = (e: Consume, out: unknown[]) =>
   match(e)
-    .with({ t: P.union('arr', 'iter') }, ({ e }) => Array.from(consumeRecE(e, out), ([v]) => v))
+    .with({ t: P.union('arr', 'iter') }, ({ e }) => Array.from(consumeIterE(e, out), ([v]) => v))
     .with({ t: 'obj' }, ({ e }) =>
-      Object.fromEntries(E.map(consumeRecE(e, out), ([v, k]) => [String(k), v])),
+      Object.fromEntries(E.map(consumeIterE(e, out), ([v, k]) => [String(k), v])),
     )
     .with({ t: 'groupObj' }, ({ e }) => {
       const obj: Record<string, number[]> = {}
-      for (let [v, k] of consumeRecE(e, out)) {
+      for (let [v, k] of consumeIterE(e, out)) {
         k = String(k)
         if (Object.prototype.hasOwnProperty.call(obj, k)) obj[k].push(v)
         else obj[k] = [v]
       }
       return obj
     })
-    .with({ t: 'first' }, ({ e }) => E.get(consumeRecE(e, out), 0)?.[0])
-    .with({ t: 'last' }, ({ e }) => E.last(consumeRecE(e, out))?.[0])
-    .with({ t: 'count' }, ({ e }) => E.length(consumeRecE(e, out)))
-    .with({ t: 'map' }, ({ e }) => new Map(consumeRecE(e, out)))
-    .with({ t: 'set' }, ({ e }) => new Set(E.map(consumeRecE(e, out), ([v]) => v)))
-    .with({ t: 'all' }, ({ e, f }) => E.every(consumeRecE(e, out), ([v, k]) => f(v, k)))
-    .with({ t: 'any' }, ({ e, f }) => E.some(consumeRecE(e, out), ([v, k]) => f(v, k)))
-    .with({ t: 'find' }, ({ e, f }) => E.find(consumeRecE(e, out), ([v, k]) => f(v, k))?.[0])
+    .with({ t: 'first' }, ({ e }) => E.get(consumeIterE(e, out), 0)?.[0])
+    .with({ t: 'last' }, ({ e }) => E.last(consumeIterE(e, out))?.[0])
+    .with({ t: 'count' }, ({ e }) => E.length(consumeIterE(e, out)))
+    .with({ t: 'map' }, ({ e }) => new Map(consumeIterE(e, out)))
+    .with({ t: 'set' }, ({ e }) => new Set(E.map(consumeIterE(e, out), ([v]) => v)))
+    .with({ t: 'all' }, ({ e, f }) => E.every(consumeIterE(e, out), ([v, k]) => f(v, k)))
+    .with({ t: 'any' }, ({ e, f }) => E.some(consumeIterE(e, out), ([v, k]) => f(v, k)))
+    .with({ t: 'find' }, ({ e, f }) => E.find(consumeIterE(e, out), ([v, k]) => f(v, k))?.[0])
     .with({ t: 'fold' }, ({ e, f, init }) =>
-      E.reduce(consumeRecE(e, out), (acc, [v, k]) => f(acc, v, k), init),
+      E.reduce(consumeIterE(e, out), (acc, [v, k]) => f(acc, v, k), init),
     )
     .with(
       { t: 'fold1' },
       ({ e, f }) =>
-        E.reduce<[number, Key], [number]>(consumeRecE(e, out), ([acc], [v, k]) => [
+        E.reduce<[number, Key], [number]>(consumeIterE(e, out), ([acc], [v, k]) => [
           f(acc, v, k),
         ])?.[0],
     )
     .exhaustive()
 
-const consumeRecE = (e: ConsumeRec | ConsumeIdxRec, out: unknown[]): Iterable<[number, Key]> =>
+const consumeIterE = (e: ConsumeIter | ConsumeIdx, out: unknown[]): Iterable<[number, Key]> =>
   match(e)
     .with({ t: P.union('leaf', 'leafIdx') }, ({ e }) => iterE(e))
     .with({ t: 'next' }, ({ e, n }) => {
-      const iter = E.iterator(consumeRecE(e, out))
+      const iter = E.iterator(consumeIterE(e, out))
       while (n--) {
         const r = iter.next()
         out.push(r.done ? undefined : r.value[0])
@@ -585,23 +630,23 @@ const consumeRecE = (e: ConsumeRec | ConsumeIdxRec, out: unknown[]): Iterable<[n
       return E.fromIterator(iter)
     })
     .with({ t: 'length' }, ({ e }) => {
-      const arr = [...consumeRecE(e, out)]
+      const arr = [...consumeIterE(e, out)]
       out.push(arr.length)
       return arr
     })
     .with({ t: 'index' }, ({ e, i }) => {
-      const arr = [...consumeRecE(e, out)]
+      const arr = [...consumeIterE(e, out)]
       out.push(arr[i]?.[0])
       return arr
     })
     .with({ t: 'partitionPoint' }, ({ e, x }) => {
-      const arr = [...consumeRecE(e, out)]
+      const arr = [...consumeIterE(e, out)]
       const idx = arr.findIndex(([, k]) => (k as number) > x)
       out.push(idx === -1 ? arr.length : idx)
       return arr
     })
     .with({ t: 'binarySearch' }, ({ e, x }) => {
-      const arr = [...consumeRecE(e, out)]
+      const arr = [...consumeIterE(e, out)]
       const idx = arr.findIndex(([, k]) => k === x)
       out.push(idx === -1 ? undefined : idx)
       return arr

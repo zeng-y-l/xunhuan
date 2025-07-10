@@ -1,39 +1,49 @@
 // biome-ignore lint/correctness/noUnusedImports: for jsdoc link
 import type * as X from '.'
-import { type IdxIter, type Iter, type Maybe, type Yield, newIdxIter, newIter } from './base'
+import { type BidiIter, type Iter, type Maybe, type Yield, newIter } from './base'
 import { flatten, prepend } from './trans'
+
+type IdxedEach<T, K> = (from: number, to: number, f: (v: T, k: K) => boolean) => boolean
 
 /**
  * 根据索引生成迭代器。内部使用。
  *
- * @param getLen 迭代器长度，自然数或无穷大。若需计算，则为函数，可能调用多次。
+ * @param getLen 迭代器长度，自然数或无穷大。若需计算，则为函数。注意：若为函数，则不能返回无穷大。
  * @param idx 函数，输入索引（小于长度的自然数），获取对应键值。调用前调用过 `getLen`。
  * @param each 函数，输入开始和结束位置（左闭右开）以及迭代函数，遍历区间每个值。类似 {@linkcode X.Iter.e}。调用后不会再调用函数。
  *
- * @returns 迭代器。
+ * @returns 迭代器。注意：若长度为无穷大，则反向迭代会抛出异常。
  */
 export const newIdxed: {
   <T, K>(
     getLen: number | (() => number),
     idx: (i: number) => Yield<T, K>,
-    each: (from: number, to: number, f: (v: T, k: K) => boolean) => boolean,
-  ): IdxIter<T, K>
-} = (getLen, idx, each) => _ofIdxed(0, getLen, idx, each)
+    each: IdxedEach<T, K>,
+    reach: IdxedEach<T, K>,
+  ): BidiIter<T, K>
+} = (getLen, idx, each, reach) => _newIdxed(0, getLen, idx, each, reach)
 
-const _ofIdxed = <T, K>(
+const _newIdxed = <T, K>(
   i: number,
   getLen: number | (() => number),
   idx: (i: number) => Yield<T, K>,
-  each: (from: number, to: number, f: (v: T, k: K) => boolean) => boolean,
-): IdxIter<T, K> => {
-  let init: Maybe<() => void>, len: Maybe<number>
-  if (typeof getLen === 'number') len = getLen as number
-  else {
+  each: IdxedEach<T, K>,
+  reach: IdxedEach<T, K>,
+): BidiIter<T, K> => {
+  let init: Maybe<() => void>, len: Maybe<number>, err: Maybe<() => never>
+  if (typeof getLen === 'number') {
+    len = getLen
+    if (len === Infinity) {
+      err = () => {
+        throw new Error('inf')
+      }
+    }
+  } else {
     init = () => {
-      len = getLen()
+      len ??= getLen()
     }
   }
-  return newIdxIter(
+  return newIter(
     () => (i < len! ? idx(i) : undefined),
     () => {
       i++
@@ -45,10 +55,20 @@ const _ofIdxed = <T, K>(
     init,
     (from, to) => {
       len ??= (getLen as () => number)()
-      return _ofIdxed(i + from, Math.min(len, i + to), idx, each)
+      return _newIdxed(i + from, Math.min(len, i + to), idx, each, reach)
     },
     () => Math.max(0, len! - i),
     i_ => (i + i_ < len! ? idx(i + i_) : undefined),
+    err || (() => (len! > i ? idx(len! - 1) : undefined)),
+    err ||
+      (() => {
+        len!--
+      }),
+    err ||
+      (f => {
+        init?.()
+        return reach(i, len!, f)
+      }),
   )
 }
 
@@ -73,13 +93,19 @@ const _ofIdxed = <T, K>(
  * @see {@linkcode X.toArr}
  */
 export const ofArr: {
-  <T>(arr: ArrayLike<T>): IdxIter<T, number>
+  <T>(arr: ArrayLike<T>): BidiIter<T, number>
 } = arr =>
   newIdxed(
     arr.length,
     i => ({ v: arr[i], k: i }),
     (i, to, f) => {
       for (; i < to; i++) {
+        if (!f(arr[i], i)) return false
+      }
+      return true
+    },
+    (to, i, f) => {
+      while (i-- > to) {
         if (!f(arr[i], i)) return false
       }
       return true
@@ -148,7 +174,7 @@ export const ofIter: {
  * @param to 不能超过这个值。默认为 `Infinity`。
  * @param step 每个值的增量。默认为 1 或 -1，根据 `from` 和 `to` 的大小决定。
  *
- * @returns 迭代器，值为等差数列。
+ * @returns 迭代器，值为等差数列。若迭代器无限长，则不能反向迭代。
  *
  * @example
  * ```ts @import.meta.vitest
@@ -160,11 +186,16 @@ export const ofIter: {
  *   X.take(5),
  *   X.toArr,
  * )).toEqual([0, 1, 2, 3, 4])
+ * expect(() => X.range().c(
+ *   X.rev,
+ *   X.first,
+ * )).toThrow('inf')
+ * ```
  * ```
  */
 export const range: {
-  (to?: number): IdxIter<number, undefined>
-  (from: number, to: number, step?: number): IdxIter<number, undefined>
+  (to?: number): BidiIter<number, undefined>
+  (from: number, to: number, step?: number): BidiIter<number, undefined>
 } = (a = Infinity, b?: number, c?: number) => {
   let from = b != null ? a : 0
   let to = b ?? a
@@ -175,8 +206,15 @@ export const range: {
       v: from + i * step,
       k: undefined,
     }),
-    (i, to_, f) => {
-      for (; i < to_; i++) {
+    (i, to, f) => {
+      for (; i < to; i++) {
+        if (!f(from + i * step, undefined)) return false
+      }
+      return true
+    },
+
+    (to, i, f) => {
+      while (i-- > to) {
         if (!f(from + i * step, undefined)) return false
       }
       return true
@@ -193,9 +231,9 @@ export const range: {
  * ```
  */
 export const empty: {
-  (): IdxIter<never, never>
+  (): BidiIter<never, never>
 } = () =>
-  newIdxIter(
+  newIter<never, never, never, never>(
     () => undefined,
     () => {},
     _ => true,
@@ -203,6 +241,9 @@ export const empty: {
     () => empty(),
     () => 0,
     _ => undefined,
+    () => undefined,
+    () => {},
+    _ => true,
   )
 
 /**
@@ -220,7 +261,7 @@ export const empty: {
  * @see {@linkcode X.onceKV}
  */
 export const once: {
-  <T>(v: T): IdxIter<T, undefined>
+  <T>(v: T): BidiIter<T, undefined>
 } = v => onceKV(v, undefined)
 
 /**
@@ -243,19 +284,25 @@ export const once: {
  * @see {@linkcode X.repeat}
  */
 export const onceKV: {
-  <T, K>(v: T, k: K): IdxIter<T, K>
+  <T, K>(v: T, k: K): BidiIter<T, K>
 } = (v, k) => {
   let done = false
-  return newIdxIter(
-    () => (done ? undefined : { v, k }),
-    () => {
-      done = true
-    },
-    f_ => done || f_(v, k),
+  let get = () => (done ? undefined : { v, k })
+  let next = () => {
+    done = true
+  }
+  let each = (f: (v_: typeof v, k_: typeof k) => boolean) => done || f(v, k)
+  return newIter(
+    get,
+    next,
+    each,
     undefined,
     (from, to) => (done || from > 0 || to < 1 ? empty() : onceKV(v, k)),
     () => 1 - +done,
     i => (i === 0 && !done ? { v, k } : undefined),
+    get,
+    next,
+    each,
   )
 }
 
@@ -279,7 +326,7 @@ export const onceKV: {
  * @see {@linkcode X.repeatKV}
  */
 export const repeat: {
-  <T>(v: T, n?: number): IdxIter<T, undefined>
+  <T>(v: T, n?: number): BidiIter<T, undefined>
 } = (v, n = Infinity) => repeatKV(v, undefined, n)
 
 /**
@@ -309,7 +356,7 @@ export const repeat: {
  * @see {@linkcode X.empty}
  */
 export const repeatKV: {
-  <T, K>(v: T, k: K, n?: number): IdxIter<T, K>
+  <T, K>(v: T, k: K, n?: number): BidiIter<T, K>
 } = (v, k, n = Infinity) => {
   let step = { v, k }
   return newIdxed(
@@ -317,6 +364,10 @@ export const repeatKV: {
     () => step,
     (i, to, f) => {
       for (; i < to; i++) if (!f(v, k)) return false
+      return true
+    },
+    (to, i, f) => {
+      while (i-- > to) if (!f(v, k)) return false
       return true
     },
   )
@@ -407,8 +458,8 @@ export const concat: {
  * @see {@linkcode X.ofEntries}
  */
 export const ofObj: {
-  <T>(obj: Record<string, T> | ArrayLike<T>): IdxIter<T, string>
-  (obj: object): IdxIter<unknown, string>
+  <T>(obj: Record<string, T> | ArrayLike<T>): BidiIter<T, string>
+  (obj: object): BidiIter<unknown, string>
 } = <T>(obj: Record<string, T>) => {
   let keys: string[] | undefined
   return newIdxed(
@@ -419,6 +470,12 @@ export const ofObj: {
     i => ({ v: obj[keys![i]], k: keys![i] }),
     (i, to, f) => {
       for (; i < to; i++) {
+        if (!f(obj[keys![i]], keys![i])) return false
+      }
+      return true
+    },
+    (to, i, f) => {
+      while (i-- > to) {
         if (!f(obj[keys![i]], keys![i])) return false
       }
       return true
