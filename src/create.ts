@@ -59,6 +59,7 @@ const _newIdxed = <T, K>(
     },
     () => Math.max(0, len! - i),
     i_ => (i + i_ < len! ? idx(i + i_) : undefined),
+    init,
     err || (() => (len! > i ? idx(len! - 1) : undefined)),
     err ||
       (() => {
@@ -241,6 +242,7 @@ export const empty: {
     () => empty(),
     () => 0,
     _ => undefined,
+    undefined,
     () => undefined,
     () => {},
     _ => true,
@@ -300,6 +302,7 @@ export const onceKV: {
     (from, to) => (done || from > 0 || to < 1 ? empty() : onceKV(v, k)),
     () => 1 - +done,
     i => (i === 0 && !done ? { v, k } : undefined),
+    undefined,
     get,
     next,
     each,

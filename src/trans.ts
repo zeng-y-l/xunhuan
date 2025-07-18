@@ -39,6 +39,7 @@ export const rev: {
     s: slice,
     l: length,
     d: index,
+    j: rinit,
     t: rget,
     x: rnext,
     h: reach,
@@ -47,7 +48,7 @@ export const rev: {
     rget,
     rnext,
     reach,
-    init,
+    rinit,
     (from, to) => {
       init?.()
       let len = length()
@@ -58,6 +59,7 @@ export const rev: {
       let j = length() - i - 1
       return j < 0 ? undefined : index(j)
     },
+    init,
     get,
     next,
     each,
@@ -269,6 +271,7 @@ let _enume = <T, Index extends undefined, Bidi extends undefined>(
     s: slice,
     l: length,
     d: index,
+    j: rinit,
     t: rget,
     x: rnext,
     h: reach,
@@ -292,6 +295,7 @@ let _enume = <T, Index extends undefined, Bidi extends undefined>(
         let s = index(i_)
         return s && { v: s.v, k: i + i_ }
       }),
+    rinit,
     length &&
       rget &&
       (() => {
@@ -403,6 +407,7 @@ export const mapKV: {
     s: slice,
     l: length,
     d: index,
+    j: rinit,
     t: rget,
     x: rnext,
     h: reach,
@@ -422,6 +427,7 @@ export const mapKV: {
         let s = index(i)
         return s && { v: val(s.v, s.k), k: key(s.v, s.k) }
       }),
+    rinit,
     rget &&
       (() => {
         let s = rget()

@@ -126,9 +126,15 @@ export class Iter<
 
   /**
    * @internal
+   * right init
+   */
+  declare readonly j: Maybe<() => void>
+
+  /**
+   * @internal
    * right get
    *
-   * 调用前，应调用过 {@linkcode i}。
+   * 调用前，应调用过 {@linkcode j}。
    *
    * @returns 最后一项（当前的）。
    */
@@ -138,7 +144,7 @@ export class Iter<
    * @internal
    * right next
    *
-   * 调用前，应调用过 {@linkcode i}。
+   * 调用前，应调用过 {@linkcode j}。
    */
   declare readonly x: (() => void) | Index | Bidi
 
@@ -171,7 +177,7 @@ export class Iter<
    * @internal
    * length
    *
-   * 调用前，应调用过 {@linkcode i}。
+   * 调用前，应调用过 {@linkcode i} 或 {@linkcode j}。
    *
    * @returns 长度。自然数或无穷大。若支持双向迭代，则必须有限。
    */
@@ -181,7 +187,7 @@ export class Iter<
    * @internal
    * index
    *
-   * 调用前，应调用过 {@linkcode i}。
+   * 调用前，应调用过 {@linkcode i} 或 {@linkcode j}。
    *
    * @param i 自然数。
    *
@@ -206,6 +212,7 @@ export class Iter<
     slice: typeof this.s,
     length: typeof this.l,
     index: typeof this.d,
+    rinit: typeof this.j,
     rget: typeof this.t,
     rnext: typeof this.x,
     reach: typeof this.h,
@@ -217,6 +224,7 @@ export class Iter<
     this.s = slice
     this.l = length
     this.d = index
+    this.j = rinit
     this.t = rget
     this.x = rnext
     this.h = reach
@@ -225,6 +233,7 @@ export class Iter<
 
     if (V) {
       let ready = !init
+      let rightReady = !rinit
       let used = false
       let end = false
       this.i =
@@ -273,7 +282,7 @@ export class Iter<
       this.l =
         length &&
         (() => {
-          V.expect(ready).toBe(true)
+          V.expect(ready || rightReady).toBe(true)
           V.expect(used).toBe(false)
           const r = length()
           V.expect(r).toBeGreaterThanOrEqual(0)
@@ -283,7 +292,7 @@ export class Iter<
       this.d =
         index &&
         (i => {
-          V.expect(ready).toBe(true)
+          V.expect(ready || rightReady).toBe(true)
           V.expect(used).toBe(false)
           V.expect(i).toBeGreaterThanOrEqual(0)
           V.expect(i % 1).toBe(0)
@@ -291,10 +300,16 @@ export class Iter<
           if (end) V.expect(r).toBeUndefined()
           return r
         })
+      this.j =
+        rinit &&
+        (() => {
+          rightReady = true
+          return rinit()
+        })
       this.t =
         rget &&
         (() => {
-          V.expect(ready).toBe(true)
+          V.expect(rightReady).toBe(true)
           V.expect(used).toBe(false)
           const r = rget()
           if (end) V.expect(r).toBeUndefined()
@@ -304,7 +319,7 @@ export class Iter<
       this.x =
         rnext &&
         (() => {
-          V.expect(ready).toBe(true)
+          V.expect(rightReady).toBe(true)
           V.expect(used).toBe(false)
           return rnext()
         })
@@ -364,6 +379,7 @@ export const newIter: {
     slice: Iter<T, K, Index, Bidi>['s'],
     length: Iter<T, K, Index, Bidi>['l'],
     index: Iter<T, K, Index, Bidi>['d'],
+    rinit: Iter<T, K, Index, Bidi>['j'],
     rget: Iter<T, K, Index, Bidi>['t'],
     rnext: Iter<T, K, Index, Bidi>['x'],
     reach: Iter<T, K, Index, Bidi>['h'],
@@ -377,6 +393,7 @@ export const newIter: {
     slice: Iter<T, K, Index>['s'],
     length: Iter<T, K, Index>['l'],
     index: Iter<T, K, Index>['d'],
+    rinit?: Iter<T, K, Index>['j'],
     rget?: Iter<T, K, Index>['t'],
     rnext?: Iter<T, K, Index>['x'],
     reach?: Iter<T, K, Index>['h'],
@@ -390,12 +407,16 @@ export const newIter: {
     slice?: Iter<T, K>['s'],
     length?: Iter<T, K>['l'],
     index?: Iter<T, K>['d'],
+    rinit?: Iter<T, K>['j'],
     rget?: Iter<T, K>['t'],
     rnext?: Iter<T, K>['x'],
     reach?: Iter<T, K>['h'],
   ): Iter<T, K>
-} = ((get, next, each, init, slice, length, index, rget, rnext, reach) =>
-  new Iter(get, next, each, init, slice, length, index, rget, rnext, reach)) satisfies <T, K>(
+} = ((get, next, each, init, slice, length, index, rinit, rget, rnext, reach) =>
+  new Iter(get, next, each, init, slice, length, index, rinit, rget, rnext, reach)) satisfies <
+  T,
+  K,
+>(
   ...args: ConstructorParameters<typeof Iter<T, K>>
 ) => Iter<T, K>
 
