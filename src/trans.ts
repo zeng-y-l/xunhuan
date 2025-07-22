@@ -50,7 +50,6 @@ export const rev: {
     reach,
     rinit,
     (from, to) => {
-      init?.()
       let len = length()
       return rev(slice(Math.max(0, len - to), Math.max(0, len - from)))
     },
@@ -306,7 +305,6 @@ let _enume = <T, Index extends undefined, Bidi extends undefined>(
     length &&
       reach &&
       (f => {
-        init?.()
         let j = length() + i
         return reach(v => f(v, --j))
       }),
@@ -1214,7 +1212,6 @@ export const prepend: {
       slice2 &&
       length1 &&
       ((from, to) => {
-        init1?.()
         let l1 = length1()
         if (l1 < from) return slice2(from - l1, to - l1)
         if (l1 >= to) return slice1(from, to)
@@ -1555,7 +1552,7 @@ const windowsByKV_ = <T, K, U, L, Index extends undefined>(
         }
         return windowsByKV(val, key)(slice(from - 1, to))
       }),
-    length && (() => (done ? 0 : length() - +!step)),
+    length && (() => (done ? 0 : Math.max(0, length() - +!step))),
     index &&
       (i => {
         if (i === 0) return step
@@ -1617,7 +1614,6 @@ export const sortBy: {
   let val: ValOf<typeof self>[], key: KeyOf<typeof self>[], idx: number[]
   return newIdxed(
     () => {
-      if (idx != null) return idx.length
       val = []
       key = []
       idx = []

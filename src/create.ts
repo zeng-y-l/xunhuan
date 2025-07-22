@@ -8,7 +8,7 @@ type IdxedEach<T, K> = (from: number, to: number, f: (v: T, k: K) => boolean) =>
 /**
  * 根据索引生成迭代器。内部使用。
  *
- * @param getLen 迭代器长度，自然数或无穷大。若需计算，则为函数。注意：若为函数，则不能返回无穷大。
+ * @param getLen 迭代器长度，自然数或无穷大。若需计算，则为函数。
  * @param idx 函数，输入索引（小于长度的自然数），获取对应键值。调用前调用过 `getLen`。
  * @param each 函数，输入开始和结束位置（左闭右开）以及迭代函数，遍历区间每个值。类似 {@linkcode X.Iter.e}。调用后不会再调用函数。
  *
@@ -30,17 +30,21 @@ const _newIdxed = <T, K>(
   each: IdxedEach<T, K>,
   reach: IdxedEach<T, K>,
 ): BidiIter<T, K> => {
-  let init: Maybe<() => void>, len: Maybe<number>, err: Maybe<() => never>
+  let init: Maybe<() => void>, rinit: Maybe<() => void>, len: Maybe<number>, err: Maybe<() => never>
   if (typeof getLen === 'number') {
     len = getLen
     if (len === Infinity) {
-      err = () => {
+      rinit = () => {
         throw new Error('inf')
       }
     }
   } else {
     init = () => {
       len ??= getLen()
+    }
+    rinit = () => {
+      init?.()
+      if (len === Infinity) throw new Error('inf')
     }
   }
   return newIter(
@@ -57,9 +61,12 @@ const _newIdxed = <T, K>(
       len ??= (getLen as () => number)()
       return _newIdxed(i + from, Math.min(len, i + to), idx, each, reach)
     },
-    () => Math.max(0, len! - i),
+    () => {
+      init?.()
+      return Math.max(0, len! - i)
+    },
     i_ => (i + i_ < len! ? idx(i + i_) : undefined),
-    init,
+    rinit,
     err || (() => (len! > i ? idx(len! - 1) : undefined)),
     err ||
       (() => {
@@ -67,7 +74,7 @@ const _newIdxed = <T, K>(
       }),
     err ||
       (f => {
-        init?.()
+        rinit?.()
         return reach(i, len!, f)
       }),
   )

@@ -364,10 +364,7 @@ export const count: {
   (self: Iter<unknown>): number
 } = self => {
   self.k()
-  if (self.l) {
-    self.i?.()
-    return self.l()
-  }
+  if (self.l) return self.l()
   let len = 0
   self.e((_v, _k) => {
     len++

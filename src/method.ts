@@ -70,7 +70,6 @@ export const length: {
   (self: IdxIter<unknown>): number
 } = self => {
   self.k(false)
-  self.i?.()
   return self.l()
 }
 

@@ -177,9 +177,7 @@ export class Iter<
    * @internal
    * length
    *
-   * 调用前，应调用过 {@linkcode i} 或 {@linkcode j}。
-   *
-   * @returns 长度。自然数或无穷大。若支持双向迭代，则必须有限。
+   * @returns 剩余长度。自然数或无穷大。若支持双向迭代，则必须有限。
    */
   declare readonly l: (() => number) | Index
 
@@ -282,7 +280,6 @@ export class Iter<
       this.l =
         length &&
         (() => {
-          V.expect(ready || rightReady).toBe(true)
           V.expect(used).toBe(false)
           const r = length()
           V.expect(r).toBeGreaterThanOrEqual(0)
