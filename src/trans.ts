@@ -744,9 +744,11 @@ export const flatten: {
  * @see {@linkcode X.zipByKV}
  */
 export const zip: {
-  <T, K, U, Index extends undefined>(
-    snd: Iter<U, unknown, Index>,
-  ): <Index2 extends undefined>(fst: Iter<T, K, Index2>) => Iter<[T, U], K, Index | Index2>
+  <T, K, U, Index extends undefined, Bidi extends undefined>(
+    snd: Iter<U, unknown, Index, Bidi>,
+  ): <Index2 extends undefined, Bidi2 extends undefined>(
+    fst: Iter<T, K, Index2, Bidi2>,
+  ) => Iter<[T, U], K, Index | Index2, Bidi | Bidi2>
 } = snd =>
   zipByKV(
     snd,
@@ -775,9 +777,11 @@ export const zip: {
  * @see {@linkcode X.zipByKV}
  */
 export const zipK: {
-  <T, U, Index extends undefined>(
-    snd: Iter<U, unknown, Index>,
-  ): <Index2 extends undefined>(fst: Iter<T, unknown, Index2>) => Iter<T, U, Index | Index2>
+  <T, U, Index extends undefined, Bidi extends undefined>(
+    snd: Iter<U, unknown, Index, Bidi>,
+  ): <Index2 extends undefined, Bidi2 extends undefined>(
+    fst: Iter<T, unknown, Index2, Bidi2>,
+  ) => Iter<T, U, Index | Index2, Bidi | Bidi2>
 } = snd =>
   zipByKV(
     snd,
@@ -807,10 +811,12 @@ export const zipK: {
  * @see {@linkcode X.zipByKV}
  */
 export const zipBy: {
-  <T, K, U, L, V, Index extends undefined>(
-    snd: Iter<U, L, Index>,
+  <T, K, U, L, V, Index extends undefined, Bidi extends undefined>(
+    snd: Iter<U, L, Index, Bidi>,
     f: (v1: T, k1: K, v2: U, k2: L) => V,
-  ): <Index2 extends undefined>(fst: Iter<T, K, Index2>) => Iter<V, K, Index | Index2>
+  ): <Index2 extends undefined, Bidi2 extends undefined>(
+    fst: Iter<T, K, Index2, Bidi2>,
+  ) => Iter<V, K, Index | Index2, Bidi | Bidi2>
 } = (snd, f) => zipByKV(snd, f, (_v1, k1, _v2, _k2) => k1)
 
 /**
@@ -840,16 +846,47 @@ export const zipBy: {
  * @see {@linkcode X.zipByKV}
  */
 export const zipByKV: {
-  <T, K, U, L, V, M, Index extends undefined>(
-    snd: Iter<U, L, Index>,
+  <T, K, U, L, V, M, Index extends undefined, Bidi extends undefined>(
+    snd: Iter<U, L, Index, Bidi>,
     val: (v1: T, k1: K, v2: U, k2: L) => V,
     key: (v1: T, k1: K, v2: U, k2: L) => M,
-  ): <Index2 extends undefined>(fst: Iter<T, K, Index2>) => Iter<V, M, Index | Index2>
+  ): <Index2 extends undefined, Bidi2 extends undefined>(
+    fst: Iter<T, K, Index2, Bidi2>,
+  ) => Iter<V, M, Index | Index2, Bidi | Bidi2>
 } = (snd, val, key) => fst => {
   fst.k()
   snd.k()
-  let { i: init1, g: get1, n: next1, e: each1, s: slice1, l: length1, d: index1 } = fst
-  let { i: init2, g: get2, n: next2, s: slice2, l: length2, d: index2 } = snd
+  if (fst.l && snd.l) {
+    let l1 = fst.l()
+    let l2 = snd.l()
+    if (l1 < l2 && snd.s) snd = snd.s(0, l1)
+    if (l2 < l1 && fst.s) fst = fst.s(0, l2)
+  }
+  let ok = fst.l && snd.l && fst.s && snd.s
+  let {
+    i: init1,
+    g: get1,
+    n: next1,
+    e: each1,
+    s: slice1,
+    l: length1,
+    d: index1,
+    j: rinit1,
+    t: rget1,
+    x: rnext1,
+    h: reach1,
+  } = fst
+  let {
+    i: init2,
+    g: get2,
+    n: next2,
+    s: slice2,
+    l: length2,
+    d: index2,
+    j: rinit2,
+    t: rget2,
+    x: rnext2,
+  } = snd
   return newIter(
     () => {
       let a = get1()
@@ -884,6 +921,37 @@ export const zipByKV: {
         if (!a || !b) return
         return { v: val(a.v, a.k, b.v, b.k), k: key(a.v, a.k, b.v, b.k) }
       }),
+    cInit(rinit1, rinit2),
+    rget1 &&
+      rget2 &&
+      rnext1 &&
+      rnext2 &&
+      ok &&
+      (() => {
+        let a = rget1()
+        let b = rget2()
+        if (!a || !b) return
+        return { v: val(a.v, a.k, b.v, b.k), k: key(a.v, a.k, b.v, b.k) }
+      }),
+    rnext1 &&
+      rnext2 &&
+      ok &&
+      (() => {
+        rnext1()
+        rnext2()
+      }),
+    reach1 &&
+      rget2 &&
+      rnext2 &&
+      ok &&
+      (f => {
+        rinit2?.()
+        return reach1((v1, k1) => {
+          let b = rget2()!
+          rnext2()
+          return f(val(v1, k1, b.v, b.k), key(v1, k1, b.v, b.k))
+        })
+      }),
   )
 }
 
@@ -917,11 +985,11 @@ type ZipAllFn<T, K, U, L, R> = (
  * @see {@linkcode X.zipAllByKV}
  */
 export const zipAll: {
-  <T, K, U, Index extends undefined>(
-    snd: Iter<U, unknown, Index>,
-  ): <Index2 extends undefined>(
-    fst: Iter<Maybe<T>, Maybe<K>, Index2>,
-  ) => Iter<[Maybe<T>, Maybe<U>], Maybe<K>, Index | Index2>
+  <T, K, U, Index extends undefined, Bidi extends undefined>(
+    snd: Iter<U, unknown, Index, Bidi>,
+  ): <Index2 extends undefined, Bidi2 extends undefined>(
+    fst: Iter<Maybe<T>, Maybe<K>, Index2, Bidi2>,
+  ) => Iter<[Maybe<T>, Maybe<U>], Maybe<K>, Index | Index2, Bidi | Bidi2>
 } = snd =>
   zipAllByKV(
     snd,
@@ -950,11 +1018,11 @@ export const zipAll: {
  * @see {@linkcode X.zipAllByKV}
  */
 export const zipAllK: {
-  <T, U, Index extends undefined>(
-    snd: Iter<U, unknown, Index>,
-  ): <Index2 extends undefined>(
-    fst: Iter<Maybe<T>, unknown, Index2>,
-  ) => Iter<Maybe<T>, Maybe<U>, Index | Index2>
+  <T, U, Index extends undefined, Bidi extends undefined>(
+    snd: Iter<U, unknown, Index, Bidi>,
+  ): <Index2 extends undefined, Bidi2 extends undefined>(
+    fst: Iter<Maybe<T>, unknown, Index2, Bidi2>,
+  ) => Iter<Maybe<T>, Maybe<U>, Index | Index2, Bidi | Bidi2>
 } = snd =>
   zipAllByKV(
     snd,
@@ -982,12 +1050,12 @@ export const zipAllK: {
  * @see {@linkcode X.zipAllByKV}
  */
 export const zipAllBy: {
-  <T, K, U, L, V, Index extends undefined>(
-    snd: Iter<U, L, Index>,
+  <T, K, U, L, V, Index extends undefined, Bidi extends undefined>(
+    snd: Iter<U, L, Index, Bidi>,
     f: ZipAllFn<T, K, U, L, V>,
-  ): <Index2 extends undefined>(
-    fst: Iter<Maybe<T>, Maybe<K>, Index2>,
-  ) => Iter<V, Maybe<K>, Index | Index2>
+  ): <Index2 extends undefined, Bidi2 extends undefined>(
+    fst: Iter<Maybe<T>, Maybe<K>, Index2, Bidi2>,
+  ) => Iter<V, Maybe<K>, Index | Index2, Bidi | Bidi2>
 } = (snd, f) => zipAllByKV(snd, f, (_v1, k1, _v2, _k2, _c1, _c2) => k1)
 
 /**
@@ -1017,16 +1085,43 @@ export const zipAllBy: {
  * @see {@linkcode X.zipAllByKV}
  */
 export const zipAllByKV: {
-  <T, K, U, L, V, M, Index extends undefined>(
-    snd: Iter<U, L, Index>,
+  <T, K, U, L, V, M, Index extends undefined, Bidi extends undefined>(
+    snd: Iter<U, L, Index, Bidi>,
     val: ZipAllFn<T, K, U, L, V>,
     key: ZipAllFn<T, K, U, L, M>,
-  ): <Index2 extends undefined>(fst: Iter<Maybe<T>, Maybe<K>, Index2>) => Iter<V, M, Index | Index2>
+  ): <Index2 extends undefined, Bidi2 extends undefined>(
+    fst: Iter<Maybe<T>, Maybe<K>, Index2, Bidi2>,
+  ) => Iter<V, M, Index | Index2, Bidi | Bidi2>
 } = (snd, val, key) => fst => {
   fst.k()
   snd.k()
-  let { i: init1, g: get1, n: next1, e: each1, s: slice1, l: length1, d: index1 } = fst
-  let { i: init2, g: get2, n: next2, e: each2, s: slice2, l: length2, d: index2 } = snd
+  let {
+    i: init1,
+    g: get1,
+    n: next1,
+    e: each1,
+    s: slice1,
+    l: length1,
+    d: index1,
+    j: rinit1,
+    t: rget1,
+    x: rnext1,
+    h: reach1,
+  } = fst
+  let {
+    i: init2,
+    g: get2,
+    n: next2,
+    e: each2,
+    s: slice2,
+    l: length2,
+    d: index2,
+    j: rinit2,
+    t: rget2,
+    x: rnext2,
+    h: reach2,
+  } = snd
+  let lenDiff: Maybe<number>
   return newIter(
     () => {
       let a = get1()
@@ -1079,6 +1174,76 @@ export const zipAllByKV: {
           v: val(a?.v, a?.k, b?.v, b?.k, !!a, !!b),
           k: key(a?.v, a?.k, b?.v, b?.k, !!a, !!b),
         }
+      }),
+    cInit(
+      cInit(rinit1, rinit2),
+      length1 &&
+        length2 &&
+        (() => {
+          lenDiff = length1() - length2()
+        }),
+    ),
+    length1 &&
+      length2 &&
+      rget1 &&
+      rget2 &&
+      (() => {
+        let a = lenDiff! < 0 ? undefined : rget1()
+        let b = lenDiff! > 0 ? undefined : rget2()
+        if (!a && !b) return
+        return {
+          v: val(a?.v, a?.k, b?.v, b?.k, !!a, !!b),
+          k: key(a?.v, a?.k, b?.v, b?.k, !!a, !!b),
+        }
+      }),
+    length1 &&
+      length2 &&
+      rnext1 &&
+      rnext2 &&
+      (() => {
+        if (lenDiff! === 0) {
+          rnext1()
+          rnext2()
+        } else if (lenDiff! > 0) {
+          rnext1()
+          lenDiff!--
+        } else {
+          rnext2()
+          lenDiff!++
+        }
+      }),
+    length1 &&
+      length2 &&
+      reach1 &&
+      reach2 &&
+      rget1 &&
+      rget2 &&
+      rnext1 &&
+      rnext2 &&
+      (f => {
+        lenDiff = length1() - length2()
+        if (lenDiff! >= 0) {
+          rinit2?.()
+          return reach1((v1, k1) => {
+            let b: Maybe<YieldOf<typeof snd>>
+            if (lenDiff!) lenDiff--
+            else {
+              b = rget2()
+              rnext2()
+            }
+            return f(val(v1, k1, b?.v, b?.k, true, !!b), key(v1, k1, b?.v, b?.k, true, !!b))
+          })
+        }
+        rinit1?.()
+        return reach2((v2, k2) => {
+          let a: Maybe<YieldOf<typeof fst>>
+          if (lenDiff!) lenDiff++
+          else {
+            a = rget1()
+            rnext1()
+          }
+          return f(val(a?.v, a?.k, v2, k2, !!a, true), key(a?.v, a?.k, v2, k2, !!a, true))
+        })
       }),
   )
 }

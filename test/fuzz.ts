@@ -45,13 +45,6 @@ type BidiIterR<R extends Lazy> =
     }
   | { t: 'sort'; e: Get<IterL> }
   | { t: 'rev'; e: Get<BidiIterL> }
-
-type BidiIter = BidiIterR<Lazy<BidiIter>>
-type BidiIterL = Lazy<BidiIter>
-
-type IdxIterR<R extends Lazy> =
-  | BidiIterR<R>
-  | { t: 'chain2'; e1: Get<R>; e2: Get<R> }
   | {
       t: 'zip2'
       e1: Get<R>
@@ -66,6 +59,13 @@ type IdxIterR<R extends Lazy> =
       fv: ZipperAll<number>
       fk: ZipperAll<Key>
     }
+
+type BidiIter = BidiIterR<Lazy<BidiIter>>
+type BidiIterL = Lazy<BidiIter>
+
+type IdxIterR<R extends Lazy> =
+  | BidiIterR<R>
+  | { t: 'chain2'; e1: Get<R>; e2: Get<R> }
   | {
       t: 'chunk'
       e: Get<R>
@@ -238,15 +238,6 @@ const arbBidiIterR = <R>(
     weight: 3,
     arbitrary: bidi.map(e => ({ t: 'rev', e: take(e) })),
   },
-]
-
-const arbIdxIterR = <R>(
-  self: fc.Arbitrary<R>,
-  bidi: fc.Arbitrary<BidiIter>,
-  iter: fc.Arbitrary<Iter>,
-): fc.MaybeWeightedArbitrary<IdxIterR<Lazy<R>>>[] => [
-  ...arbBidiIterR(self, bidi, iter),
-  fc.tuple(self, self).map(([e1, e2]) => ({ t: 'chain2', e1, e2 })),
   fc.record({
     t: fc.constant('zip2'),
     e1: self,
@@ -261,8 +252,17 @@ const arbIdxIterR = <R>(
     fv: arbZipperAll(fc.integer()),
     fk: arbZipperAll(arbKey()),
   }),
+]
+
+const arbIdxIterR = <R>(
+  self: fc.Arbitrary<R>,
+  bidi: fc.Arbitrary<BidiIter>,
+  iter: fc.Arbitrary<Iter>,
+): fc.MaybeWeightedArbitrary<IdxIterR<Lazy<R>>>[] => [
+  ...arbBidiIterR(self, bidi, iter),
+  fc.tuple(self, self).map(([e1, e2]) => ({ t: 'chain2', e1, e2 })),
   {
-    weight: 3,
+    weight: 2,
     arbitrary: fc.record({
       t: fc.constant('chunk'),
       e: self,
@@ -272,7 +272,7 @@ const arbIdxIterR = <R>(
     }),
   },
   {
-    weight: 3,
+    weight: 4,
     arbitrary: fc.tuple(self, fc.func(fc.integer()), fc.func(arbKey())).map(([e, fv, fk]) => ({
       t: 'windows',
       e,
@@ -403,6 +403,8 @@ const iterBidiRX = <R extends Lazy, Idx extends undefined, Bidi extends undefine
       iterX(e).c(X.sortBy((v1, k1, v2, k2) => v1 - v2 || +(k1! > k2!) - +(k2! > k1!))),
     )
     .with({ t: 'rev' }, ({ e }) => iterBidiX(e).c(X.rev))
+    .with({ t: 'zip2' }, ({ e1, e2, fv, fk }) => rec(e1).c(X.zipByKV(rec(e2), fv, fk)))
+    .with({ t: 'zipAll2' }, ({ e1, e2, fv, fk }) => rec(e1).c(X.zipAllByKV(rec(e2), fv, fk)))
     .exhaustive()
 
 const iterBidiX = (e: BidiIter): X.BidiIter<number, Key> => iterBidiRX(e, iterBidiX)
@@ -412,9 +414,7 @@ const iterIdxRX = <R extends Lazy, Idx extends undefined>(
   rec: (r: Get<R>) => X.Iter<number, Key, Idx>,
 ): X.Iter<number, Key, Idx> =>
   match<IdxIterR<R>, X.Iter<number, Key, Idx>>(e)
-    .with({ t: 'zip2' }, ({ e1, e2, fv, fk }) => rec(e1).c(X.zipByKV(rec(e2), fv, fk)))
     .with({ t: 'chain2' }, ({ e1, e2 }) => rec(e2).c(X.prepend(rec(e1))))
-    .with({ t: 'zipAll2' }, ({ e1, e2, fv, fk }) => rec(e1).c(X.zipAllByKV(rec(e2), fv, fk)))
     .with({ t: 'chunk' }, ({ e, n, last, f }) => rec(e).c(X.chunk(n, last), X.map(f)))
     .with({ t: 'windows' }, ({ e, fv, fk }) => rec(e).c(X.windowsByKV(fv, fk)))
     .otherwise(e => iterBidiRX(e, rec))

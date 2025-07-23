@@ -179,8 +179,8 @@ export const ofIter: {
  * 区间内的等差数列。
  *
  * @param from 第一个值。默认为 0。
- * @param to 不能超过这个值。默认为 `Infinity`。
- * @param step 每个值的增量。默认为 1 或 -1，根据 `from` 和 `to` 的大小决定。
+ * @param to 不能到达这个值。默认为 `Infinity`。
+ * @param step 每个值的增量。默认为 1 或 -1，根据 `from` 和 `to` 的大小决定。若为 0，则返回空迭代器。
  *
  * @returns 迭代器，值为等差数列。若迭代器无限长，则不能反向迭代。
  *
@@ -190,10 +190,15 @@ export const ofIter: {
  * expect(X.toArr(X.range(-2, 2))).toEqual([-2, -1, 0, 1])
  * expect(X.toArr(X.range(2, -2))).toEqual([2, 1, 0, -1])
  * expect(X.toArr(X.range(1, 11, 3))).toEqual([1, 4, 7, 10])
+ * expect(X.toArr(X.range(0, 0, 0))).toEqual([])
  * expect(X.range().c(
  *   X.take(5),
  *   X.toArr,
  * )).toEqual([0, 1, 2, 3, 4])
+ * expect(X.range(1, 2, 0).c(
+ *   X.take(3),
+ *   X.toArr,
+ * )).toEqual([1, 1, 1])
  * expect(() => X.range().c(
  *   X.rev,
  *   X.first,
@@ -209,7 +214,7 @@ export const range: {
   let to = b ?? a
   let step = c ?? (from < to ? 1 : -1)
   return newIdxed(
-    step * (to - from) >= 0 ? Math.ceil((to - from) / step) : 0,
+    to === from ? 0 : step * (to - from) >= 0 ? Math.ceil((to - from) / step) : 0,
     i => ({
       v: from + i * step,
       k: undefined,
