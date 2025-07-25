@@ -213,8 +213,9 @@ export const range: {
   let from = b != null ? a : 0
   let to = b ?? a
   let step = c ?? (from < to ? 1 : -1)
+  let len = (to - from) / step
   return newIdxed(
-    to === from ? 0 : step * (to - from) >= 0 ? Math.ceil((to - from) / step) : 0,
+    Number.isNaN(len) ? 0 : Math.ceil((to - from) / step),
     i => ({
       v: from + i * step,
       k: undefined,

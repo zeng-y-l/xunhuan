@@ -49,6 +49,15 @@ export const last: {
   <T>(self: Iter<T>): Maybe<T>
 } = self => {
   self.k()
+  let r: Maybe<ValOf<typeof self>>
+
+  if (self.h) {
+    self.h(v => {
+      r = v
+      return false
+    })
+    return r
+  }
 
   if (self.d && self.l) {
     self.i?.()
@@ -56,7 +65,6 @@ export const last: {
     return len > 0 && len < Infinity ? self.d(len - 1)?.v : undefined
   }
 
-  let r: Maybe<ValOf<typeof self>>
   self.e(v => {
     r = v
     return true

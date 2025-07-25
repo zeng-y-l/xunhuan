@@ -43,6 +43,11 @@ type BidiIterR<R extends Lazy> =
       e: Get<R>
       n: number
     }
+  | {
+      t: 'rnext'
+      e: Get<BidiIterL>
+      n: number
+    }
   | { t: 'sort'; e: Get<IterL> }
   | { t: 'rev'; e: Get<BidiIterL> }
   | {
@@ -112,15 +117,18 @@ export type Consume =
   | { t: 'fold'; e: ConsumeIter; f: Folder; init: number }
   | { t: 'fold1'; e: ConsumeIter; f: Folder }
 
-type ConsumeR<R extends Lazy> =
-  | { t: 'next'; e: Get<R>; n: number }
-  | { t: 'length'; e: Get<ConsumeIdxL> }
-  | { t: 'index'; e: Get<ConsumeIdxL>; i: number }
-  | { t: 'partitionPoint' | 'binarySearch'; e: Get<ConsumeIdxL>; x: number }
+type ConsumeR<I, IIdx> =
+  | { t: 'leaf'; e: I }
+  | { t: 'next'; e: ConsumeR<I, IIdx>; n: number }
+  | { t: 'rnext'; e: Get<ConsumeBidiL>; n: number }
+  | { t: 'length'; e: ConsumeR<IIdx, IIdx> }
+  | { t: 'index'; e: ConsumeR<IIdx, IIdx>; i: number }
+  | { t: 'partitionPoint' | 'binarySearch'; e: ConsumeR<IIdx, IIdx>; x: number }
 
-type ConsumeIter = ConsumeR<Lazy<ConsumeIter>> | { t: 'leaf'; e: Iter }
-type ConsumeIdx = ConsumeR<ConsumeIdxL> | { t: 'leafIdx'; e: IdxIter }
-type ConsumeIdxL = Lazy<ConsumeIdx>
+type ConsumeIter = ConsumeR<Iter, IdxIter>
+type ConsumeIdx = ConsumeR<IdxIter, IdxIter>
+type ConsumeBidi = ConsumeR<BidiIter, BidiIter>
+type ConsumeBidiL = Lazy<ConsumeBidi>
 
 const forever = (e: Iter): boolean =>
   match(e)
@@ -139,6 +147,7 @@ const forever = (e: Iter): boolean =>
           'enum',
           'windows',
           'next',
+          'rnext',
           'sort',
           'rev',
         ),
@@ -153,18 +162,21 @@ const forever = (e: Iter): boolean =>
 const take = <T extends Iter>(e: T): T | BidiIterR<Lazy<T>> =>
   forever(e) ? { t: 'slice', e, from: 0, to: 50 } : e
 
-const inc = (e: ConsumeIdx): ConsumeIdx =>
-  match<ConsumeIdx, ConsumeIdx>(e)
-    .with({ t: 'leafIdx' }, ({ e }) => ({
-      t: 'leafIdx',
+type IncRIter<I> = I | BidiIterR<Lazy<BidiIterR<Lazy<I>>>>
+const inc = <I>(e: ConsumeR<I, I>): ConsumeR<IncRIter<I>, IncRIter<I>> =>
+  match<ConsumeR<I, I>, ConsumeR<IncRIter<I>, IncRIter<I>>>(e)
+    .with({ t: 'leaf' }, e => ({
+      t: 'leaf',
       e: {
         t: 'map',
-        e: { t: 'enum', e },
+        e: { t: 'enum', e: e.e },
         fk: (v, k) => (v % 500) + (k as number) * 1000,
         fv: v => v,
       },
     }))
-    .with({ t: P.union('index', 'length', 'next') }, e => ({ ...e, e: inc(e.e) }))
+    .with({ t: P.union('index', 'length') }, e => ({ ...e, e: inc(e.e) }))
+    .with({ t: 'next' }, e => ({ ...e, e: inc(e.e) }))
+    .with({ t: 'rnext' }, e => ({ ...e, e: inc(e.e) }))
     .with({ t: P.union('partitionPoint', 'binarySearch') }, e => e)
     .exhaustive()
 
@@ -186,19 +198,25 @@ const arbOneof = <T>(...args: (false | fc.MaybeWeightedArbitrary<T>)[]) =>
 const arbBidiIterLeaf = (): fc.Arbitrary<BidiIter>[] => [
   fc.constant({ t: 'empty' }),
   fc.tuple(fc.integer(), arbKey()).map(([v, k]) => ({ t: 'once', v, k })),
-  fc
-    .tuple(fc.integer(), fc.option(fc.nat()), arbKey())
-    .map(([v, n, k]) => ({ t: 'repeat', n: n ?? Infinity, v, k })),
+  fc.tuple(fc.integer(), fc.nat(), arbKey()).map(([v, n, k]) => ({ t: 'repeat', n, v, k })),
   fc.array(fc.integer()).map(arr => ({ t: 'arr', arr })),
   fc
     .array(fc.tuple(fc.string(), fc.integer()))
     .map(e => ({ t: 'obj', obj: Object.fromEntries(e) })),
   fc
     .tuple(fc.integer(), fc.integer(), fc.integer())
+    .filter(([, , step]) => step !== 0)
     .map(([from, b, step]) => ({ t: 'range', from, to: from + b, step })),
 ]
 
-const arbIdxIterLeaf = arbBidiIterLeaf
+const arbIdxIterLeaf = (): fc.Arbitrary<IdxIter>[] => [
+  ...arbBidiIterLeaf(),
+  fc.tuple(fc.integer(), arbKey()).map(([v, k]) => ({ t: 'repeat', n: Infinity, v, k })),
+  fc
+    .tuple(fc.integer(), fc.double(), fc.integer({ min: -3, max: 3 }))
+    .filter(([, , step]) => step !== 0)
+    .map(([from, b, step]) => ({ t: 'range', from, to: from + b, step })),
+]
 
 const arbIterLeaf = (): fc.Arbitrary<Iter>[] => [
   ...arbBidiIterLeaf(),
@@ -223,15 +241,18 @@ const arbBidiIterR = <R>(
   {
     weight: 7,
     arbitrary: fc
-      .tuple(self, fc.nat(15))
-      .chain(([e, to]) =>
-        fc.nat(to ?? 10).map(from => ({ t: 'slice', e, from, to: to ?? Infinity })),
-      ),
+      .tuple(self, fc.nat(15), arbOneof(fc.nat(30), fc.constantFrom(0, 1, Infinity)))
+      .map(([e, from, to]) => ({ t: 'slice', e, from: from % (to + 1), to })),
   },
   fc.record({
     t: fc.constantFrom('skip', 'next'),
     e: self,
-    n: fc.nat(10),
+    n: fc.nat(5),
+  }),
+  fc.record({
+    t: fc.constantFrom('rnext'),
+    e: bidi,
+    n: fc.nat(5),
   }),
   iter.map(e => ({ t: 'sort', e: take(e) })),
   {
@@ -319,34 +340,35 @@ const arbIterLet = fc.letrec<{ iter: Iter; idx: IdxIter; bidi: BidiIter }>(tie =
 
 const arbIter = arbIterLet.iter.map(take)
 const arbIdxIter = arbIterLet.idx.map(take)
-// const arbBidiIter = arbIterLet.bidi.map(take)
+const arbBidiIter = arbIterLet.bidi.map(take)
 
-const arbConsumeR = <R>(
-  self: fc.Arbitrary<R>,
-  idx: fc.Arbitrary<ConsumeIdx>,
-): fc.Arbitrary<ConsumeR<Lazy<R>>>[] => [
-  fc.tuple(self, fc.nat(20)).map(([e, n]) => ({ t: 'next', e, n })),
-  idx.map(e => ({ t: 'length', e })),
-  fc.tuple(idx, fc.nat(20)).map(([e, i]) => ({ t: 'index', e, i })),
-  fc.record({
-    t: fc.constantFrom('partitionPoint', 'binarySearch'),
-    e: idx.map(inc),
-    x: fc.integer(),
-  }),
-]
+const arbConsumeR = <I, IIdx>(
+  iter: fc.Arbitrary<I>,
+  self: fc.Arbitrary<ConsumeR<I, IIdx>>,
+  idx: fc.Arbitrary<ConsumeR<IIdx, IIdx>>,
+  bidi: fc.Arbitrary<ConsumeBidi>,
+) =>
+  arbOneof<ConsumeR<I, IncRIter<IIdx>>>(
+    iter.map(e => ({ t: 'leaf', e })),
+    fc.tuple(bidi, fc.nat(20)).map(([e, n]) => ({ t: 'rnext', e, n })),
+    fc.tuple(self, fc.nat(20)).map(([e, n]) => ({ t: 'next', e, n })),
+    idx.map(e => ({ t: 'length', e })),
+    fc.tuple(idx, fc.nat(20)).map(([e, i]) => ({ t: 'index', e, i })),
+    fc.record({
+      t: fc.constantFrom('partitionPoint', 'binarySearch'),
+      e: idx.map(inc),
+      x: fc.integer(),
+    }),
+  )
 
 const { consume: arbConsumeIter } = fc.letrec<{
   consume: ConsumeIter
   idx: ConsumeIdx
+  bidi: ConsumeBidi
 }>(tie => ({
-  consume: arbOneof<ConsumeIter>(
-    arbIter.map(e => ({ t: 'leaf', e })),
-    ...arbConsumeR(tie('consume'), tie('idx')),
-  ),
-  idx: arbOneof<ConsumeIdx>(
-    arbIdxIter.map(e => ({ t: 'leafIdx', e })),
-    ...arbConsumeR(tie('idx'), tie('idx')),
-  ),
+  consume: arbConsumeR(arbIter, tie('consume'), tie('idx'), tie('bidi')),
+  idx: arbConsumeR(arbIdxIter, tie('idx'), tie('idx'), tie('bidi')),
+  bidi: arbConsumeR(arbBidiIter, tie('bidi'), tie('bidi'), tie('bidi')),
 }))
 
 export const arbConsume = arbOneof<Consume>(
@@ -395,8 +417,14 @@ const iterBidiRX = <R extends Lazy, Idx extends undefined, Bidi extends undefine
     .with({ t: 'skip' }, ({ e, n }) => rec(e).c(X.skip(n)))
     .with({ t: 'next' }, ({ e, n }) => {
       const iter = rec(e)
-      X.current(iter)
+      if (!n) X.current(iter)
       while (n--) X.moveNext(iter)
+      return iter
+    })
+    .with({ t: 'rnext' }, ({ e, n }) => {
+      const iter = iterBidiX(e)
+      if (!n) X.rCurrent(iter)
+      while (n--) X.rMoveNext(iter)
       return iter
     })
     .with({ t: 'sort' }, ({ e }) =>
@@ -464,47 +492,54 @@ export const consumeX = (e: Consume, out: unknown[]) =>
     .exhaustive()
 
 const consumeIterX = (e: ConsumeIter, out: unknown[]): X.Iter<number, Key> =>
-  match(e)
-    .with({ t: 'leaf' }, ({ e }) => iterX(e))
-    .otherwise(e => consumeRX(e, out, consumeIterX))
-
+  consumeRX(e, out, iterX, consumeIdxX)
 const consumeIdxX = (e: ConsumeIdx, out: unknown[]): X.IdxIter<number, Key> =>
-  match(e)
-    .with({ t: 'leafIdx' }, ({ e }) => iterIdxX(e))
-    .otherwise(e => consumeRX(e, out, consumeIdxX))
+  consumeRX(e, out, iterIdxX, consumeIdxX)
+const consumeBidiX = (e: ConsumeBidi, out: unknown[]): X.BidiIter<number, Key> =>
+  consumeRX(e, out, iterBidiX, consumeBidiX)
 
-const consumeRX = <R, I extends X.Iter<number, Key>>(
-  e: ConsumeR<Lazy<R>>,
+const consumeRX = <I, IIdx, It extends X.Iter<number, Key>>(
+  e: ConsumeR<I, IIdx>,
   out: unknown[],
-  r: (e: R, out: unknown[]) => I,
-): I | X.IdxIter<number, Key> =>
+  iter: (e: I) => It,
+  idx: (e: ConsumeR<IIdx, IIdx>, out: unknown[]) => It & X.IdxIter<number, Key>,
+): It | X.BidiIter<number, Key> =>
   match(e)
+    .with({ t: 'leaf' }, ({ e }) => iter(e))
     .with({ t: 'next' }, ({ e, n }) => {
-      const i = r(e, out)
+      const i = consumeRX(e, out, iter, idx)
       while (n--) {
         out.push(X.current(i))
         X.moveNext(i)
       }
       return i
     })
+    .with({ t: 'rnext' }, ({ e, n }) => {
+      const i = consumeBidiX(e, out)
+      while (n--) {
+        out.push(X.rCurrent(i))
+        X.rMoveNext(i)
+      }
+      return i
+    })
     .with({ t: 'length' }, ({ e }) => {
-      const i = consumeIdxX(e, out)
+      const i = idx(e, out)
       out.push(X.length(i))
       return i
     })
     .with({ t: 'index' }, ({ e, i }) => {
-      const iter = consumeIdxX(e, out)
+      const iter = idx(e, out)
       out.push(iter.c(X.nth(i)))
       return iter
     })
     .with({ t: 'partitionPoint' }, ({ e, x }) => {
-      const iter = consumeIdxX(e, out) as X.IdxIter<number, number>
-      out.push(iter.c(X.partitionPoint((_, k) => k > x)))
+      const iter = idx(e, out)
+      out.push((iter as X.IdxIter<number, number>).c(X.partitionPoint((_, k) => k > x)))
       return iter
     })
     .with({ t: 'binarySearch' }, ({ e, x }) => {
-      const iter = consumeIdxX(e, out) as X.IdxIter<number, number>
-      out.push(iter.c(X.binarySearchK(x)))
+      const iter = idx(e, out)
+      out.push((iter as X.IdxIter<number, number>).c(X.binarySearchK(x)))
       return iter
     })
     .exhaustive()
@@ -581,6 +616,7 @@ const iterE = (e: Iter): Iterable<[number, Key]> =>
       return arr
     })
     .with({ t: 'rev' }, ({ e }) => E.reverse(iterE(e)))
+    .with({ t: 'rnext' }, ({ e, n }) => E.dropRight(iterE(e), n))
     .exhaustive()
 
 export const consumeE = (e: Consume, out: unknown[]) =>
@@ -618,9 +654,9 @@ export const consumeE = (e: Consume, out: unknown[]) =>
     )
     .exhaustive()
 
-const consumeIterE = (e: ConsumeIter | ConsumeIdx, out: unknown[]): Iterable<[number, Key]> =>
+const consumeIterE = (e: ConsumeIter, out: unknown[]): Iterable<[number, Key]> =>
   match(e)
-    .with({ t: P.union('leaf', 'leafIdx') }, ({ e }) => iterE(e))
+    .with({ t: 'leaf' }, ({ e }) => iterE(e))
     .with({ t: 'next' }, ({ e, n }) => {
       const iter = E.iterator(consumeIterE(e, out))
       while (n--) {
@@ -628,6 +664,13 @@ const consumeIterE = (e: ConsumeIter | ConsumeIdx, out: unknown[]): Iterable<[nu
         out.push(r.done ? undefined : r.value[0])
       }
       return E.fromIterator(iter)
+    })
+    .with({ t: 'rnext' }, ({ e, n }) => {
+      const arr = [...consumeIterE(e, out)]
+      while (n--) {
+        out.push(arr.pop()?.[0])
+      }
+      return arr
     })
     .with({ t: 'length' }, ({ e }) => {
       const arr = [...consumeIterE(e, out)]

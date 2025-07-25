@@ -1,6 +1,6 @@
 // biome-ignore lint/correctness/noUnusedImports: for jsdoc link
 import type * as X from '.'
-import type { IdxIter, Iter, Maybe } from './base'
+import type { BidiIter, IdxIter, Iter, Maybe } from './base'
 
 /**
  * 获取当前值。
@@ -19,6 +19,7 @@ import type { IdxIter, Iter, Maybe } from './base'
  *
  * @see {@linkcode X.first}
  * @see {@linkcode X.moveNext}
+ * @see {@linkcode X.rCurrent}
  */
 export const current: {
   <T>(self: Iter<T>): Maybe<T>
@@ -44,6 +45,7 @@ export const current: {
  * ```
  *
  * @see {@linkcode X.current}
+ * @see {@linkcode X.rMoveNext}
  */
 export const moveNext: {
   (self: Iter<unknown>): void
@@ -51,6 +53,59 @@ export const moveNext: {
   self.k(false)
   self.i?.()
   self.n()
+}
+
+/**
+ * 获取右侧当前值。
+ *
+ * 方法，不消耗，返回输入迭代器的最后一个值。若已结束则返回 `undefined`。
+ *
+ * @example
+ * ```ts @import.meta.vitest
+ * const iter = X.ofArr('ab')
+ * expect(X.rCurrent(iter)).toEqual('b')
+ * X.rMoveNext(iter)
+ * expect(X.rCurrent(iter)).toEqual('a')
+ * X.rMoveNext(iter)
+ * expect(X.rCurrent(iter)).toEqual(undefined)
+ * ```
+ *
+ * @see {@linkcode X.last}
+ * @see {@linkcode X.rMoveNext}
+ * @see {@linkcode X.current}
+ */
+export const rCurrent: {
+  <T>(self: BidiIter<T>): Maybe<T>
+} = self => {
+  self.k(false)
+  self.j?.()
+  return self.t()?.v
+}
+
+/**
+ * 从右侧步进迭代器。
+ *
+ * 方法，不消耗，只步进输入迭代器。
+ *
+ * @example
+ * ```ts @import.meta.vitest
+ * const iter = X.ofArr('ab')
+ * expect(X.rCurrent(iter)).toEqual('b')
+ * X.rMoveNext(iter)
+ * expect(X.rCurrent(iter)).toEqual('a')
+ * X.rMoveNext(iter)
+ * expect(X.rCurrent(iter)).toEqual(undefined)
+ * ```
+ *
+ * @see {@linkcode X.rCurrent}
+ * @see {@linkcode X.moveNext}
+ */
+export const rMoveNext: {
+  (self: BidiIter<unknown>): void
+} = self => {
+  self.k(false)
+  self.j?.()
+  self.x()
 }
 
 /**
