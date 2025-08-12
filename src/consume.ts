@@ -512,6 +512,7 @@ export const groupObj: {
   self.k()
   let obj: Record<keyof any, ValOf<typeof self>[]> = {}
   self.e((v, k) => {
+    // biome-ignore lint/suspicious/noPrototypeBuiltins: Object.hasOwn may be unavailable
     if (Object.prototype.hasOwnProperty.call(obj, k)) obj[k].push(v)
     else obj[k] = [v]
     return true

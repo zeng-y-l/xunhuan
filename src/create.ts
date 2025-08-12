@@ -1,6 +1,6 @@
 // biome-ignore lint/correctness/noUnusedImports: for jsdoc link
 import type * as X from '.'
-import { type BidiIter, type Iter, type Maybe, type Yield, newIter } from './base'
+import { type BidiIter, type Iter, type Maybe, newIter, type Yield } from './base'
 import { flatten, prepend } from './trans'
 
 type IdxedEach<T, K> = (from: number, to: number, f: (v: T, k: K) => boolean) => boolean

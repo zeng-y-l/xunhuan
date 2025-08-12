@@ -1,6 +1,6 @@
 /// <reference types="vitest/config" />
 import { minify } from 'terser'
-import { type Plugin, defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import { doctest } from 'vite-plugin-doctest'
 
 // https://github.com/vitejs/vite/issues/6555

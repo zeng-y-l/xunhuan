@@ -1,5 +1,5 @@
-import { vi } from 'vitest'
 import * as vitest from 'vitest'
+import { vi } from 'vitest'
 
 // for doctest
 vi.stubGlobal('X', await import('../src'))

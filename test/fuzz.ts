@@ -1,8 +1,7 @@
-// biome-ignore lint/correctness/noNodejsModules:
 import { Console } from 'node:console'
 import * as E from 'extra-iterable'
 import fc from 'fast-check'
-import { Pattern as P, match } from 'ts-pattern'
+import { match, Pattern as P } from 'ts-pattern'
 import * as X from '../src'
 
 fc.configureGlobal({ numRuns: Number(process.env.FUZZ_SIZE) || 300 })
@@ -629,6 +628,7 @@ export const consumeE = (e: Consume, out: unknown[]) =>
       const obj: Record<string, number[]> = {}
       for (let [v, k] of consumeIterE(e, out)) {
         k = String(k)
+        // biome-ignore lint/suspicious/noPrototypeBuiltins: Object.hasOwn may be unavailable
         if (Object.prototype.hasOwnProperty.call(obj, k)) obj[k].push(v)
         else obj[k] = [v]
       }

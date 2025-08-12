@@ -2,14 +2,14 @@
 import type * as X from '.'
 import {
   type BidiIter,
+  cInit,
   type Iter,
   type KeyOf,
   type Maybe,
+  newIter,
   type ValOf,
   type Yield,
   type YieldOf,
-  cInit,
-  newIter,
 } from './base'
 import { newIdxed } from './create'
 
