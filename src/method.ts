@@ -248,6 +248,4 @@ export const binarySearchBy: {
  */
 export const binarySearchK: {
   <K>(k: K): (self: IdxIter<unknown, K>) => Maybe<number>
-} = x =>
-  // biome-ignore lint/suspicious/noSelfCompare:
-  binarySearchBy((_, k) => +(k > x || k !== k) - +(k < x || x !== x))
+} = x => binarySearchBy((_, k) => +(k > x || Number.isNaN(k)) - +(k < x || Number.isNaN(x)))

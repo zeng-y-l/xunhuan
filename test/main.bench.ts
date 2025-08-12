@@ -77,7 +77,7 @@ describe('flatMap', () => {
 describe('range', () => {
   bench('native loop', () => {
     let flag = true
-    // biome-ignore lint/correctness/noUnusedVariables:
+    // biome-ignore lint/correctness/noUnusedVariables: prevent optimization
     let sum = 0
     for (let x = 0; x < 1000; x++) {
       if (x % 2 !== 0) continue
