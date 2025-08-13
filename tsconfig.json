@@ -1,24 +1,4 @@
 {
-  "compilerOptions": {
-    "target": "ES2020",
-    "useDefineForClassFields": true,
-    "module": "ESNext",
-    "lib": ["ES2020"],
-    "skipLibCheck": true,
-
-    /* Bundler mode */
-    "moduleResolution": "node10",
-    "allowImportingTsExtensions": true,
-    "isolatedModules": true,
-    "erasableSyntaxOnly": true,
-    "moduleDetection": "force",
-    "noEmit": true,
-    "allowSyntheticDefaultImports": true,
-
-    /* Linting */
-    "strict": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
-  },
-  "include": ["src", "test"]
+  "files": [],
+  "references": [{ "path": "./tsconfig.lib.json" }, { "path": "./tsconfig.node.json" }]
 }

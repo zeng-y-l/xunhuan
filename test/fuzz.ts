@@ -628,8 +628,7 @@ export const consumeE = (e: Consume, out: unknown[]) =>
       const obj: Record<string, number[]> = {}
       for (let [v, k] of consumeIterE(e, out)) {
         k = String(k)
-        // biome-ignore lint/suspicious/noPrototypeBuiltins: Object.hasOwn may be unavailable
-        if (Object.prototype.hasOwnProperty.call(obj, k)) obj[k].push(v)
+        if (Object.hasOwn(obj, k)) obj[k].push(v)
         else obj[k] = [v]
       }
       return obj
