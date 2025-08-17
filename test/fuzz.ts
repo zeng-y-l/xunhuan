@@ -37,6 +37,8 @@ type BidiIterR<R extends Lazy> =
   | { t: 'map'; e: Get<R>; fv: Mapper<number>; fk: Mapper<Key> }
   | { t: 'skip'; e: Get<R>; n: number }
   | { t: 'slice'; e: Get<R>; from: number; to: number }
+  | { t: 'skipWhile'; e: Get<R>; f: Mapper<boolean> }
+  | { t: 'skipWhileR'; e: Get<BidiIterL>; f: Mapper<boolean> }
   | {
       t: 'next'
       e: Get<R>
@@ -94,7 +96,6 @@ type Iter =
   | { t: 'scan'; e: Iter; f: Folder; init: number }
   | { t: 'filter'; e: Iter; f: Mapper<boolean> }
   | { t: 'takeWhile'; e: Iter; f: Mapper<boolean> }
-  | { t: 'skipWhile'; e: Iter; f: Mapper<boolean> }
   | {
       t: 'splitBy'
       e: Iter
@@ -140,6 +141,7 @@ const forever = (e: Iter): boolean =>
           'filter',
           'takeWhile',
           'skipWhile',
+          'skipWhileR',
           'skip',
           'chunk',
           'splitBy',
@@ -225,11 +227,11 @@ const arbIterLeaf = (): fc.Arbitrary<Iter>[] => [
     .map(([init, f]) => ({ t: 'succ', f: a => f(a), init })),
 ]
 
-const arbBidiIterR = <R>(
+const arbBidiIterR = <R extends Iter>(
   self: fc.Arbitrary<R>,
   bidi: fc.Arbitrary<BidiIter>,
   iter: fc.Arbitrary<Iter>,
-): fc.MaybeWeightedArbitrary<BidiIterR<Lazy<R>>>[] => [
+): fc.MaybeWeightedArbitrary<BidiIterR<Lazy<R | BidiIterR<Lazy<R>>>>>[] => [
   self.map(e => ({ t: 'enum', e })),
   fc.record({
     t: fc.constant('map'),
@@ -253,6 +255,16 @@ const arbBidiIterR = <R>(
     e: bidi,
     n: fc.nat(5),
   }),
+  fc.record({
+    t: fc.constant('skipWhile'),
+    e: self.map(take),
+    f: arbMapper(fc.boolean()),
+  }),
+  fc.record({
+    t: fc.constant('skipWhileR'),
+    e: bidi.map(take),
+    f: arbMapper(fc.boolean()),
+  }),
   iter.map(e => ({ t: 'sort', e: take(e) })),
   {
     weight: 3,
@@ -274,11 +286,11 @@ const arbBidiIterR = <R>(
   }),
 ]
 
-const arbIdxIterR = <R>(
+const arbIdxIterR = <R extends Iter>(
   self: fc.Arbitrary<R>,
   bidi: fc.Arbitrary<BidiIter>,
   iter: fc.Arbitrary<Iter>,
-): fc.MaybeWeightedArbitrary<IdxIterR<Lazy<R>>>[] => [
+): fc.MaybeWeightedArbitrary<IdxIterR<Lazy<R | IdxIterR<Lazy<R>>>>>[] => [
   ...arbBidiIterR(self, bidi, iter),
   fc.tuple(self, self).map(([e1, e2]) => ({ t: 'chain2', e1, e2 })),
   {
@@ -310,7 +322,7 @@ const arbIterR = (
   fc.tuple(self.map(take), arbMapper(self)).map(([e, f]) => ({ t: 'flatMap', e, f })),
   fc.tuple(self, arbMapper(fc.boolean())).map(([e, f]) => ({ t: 'takeWhile', e, f })),
   fc.record({
-    t: fc.constantFrom('filter', 'skipWhile'),
+    t: fc.constant('filter'),
     e: self.map(take),
     f: arbMapper(fc.boolean()),
   }),
@@ -414,6 +426,8 @@ const iterBidiRX = <R extends Lazy, Idx extends undefined, Bidi extends undefine
     .with({ t: 'map' }, ({ e, fv, fk }) => rec(e).c(X.mapKV(fv, fk)))
     .with({ t: 'slice' }, ({ e, from, to }) => rec(e).c(X.slice(from, to)))
     .with({ t: 'skip' }, ({ e, n }) => rec(e).c(X.skip(n)))
+    .with({ t: 'skipWhile' }, ({ e, f }) => rec(e).c(X.skipWhile(f)))
+    .with({ t: 'skipWhileR' }, ({ e, f }) => iterBidiX(e).c(X.skipWhileR(f)))
     .with({ t: 'next' }, ({ e, n }) => {
       const iter = rec(e)
       if (!n) X.current(iter)
@@ -456,7 +470,6 @@ const iterX = (e: Iter): X.Iter<number, Key> =>
     .with({ t: 'filter' }, ({ e, f }) => iterX(e).c(X.filter(f)))
     .with({ t: 'scan' }, ({ e, f, init }) => iterX(e).c(X.scan(f, init)))
     .with({ t: 'takeWhile' }, ({ e, f }) => iterX(e).c(X.takeWhile(f)))
-    .with({ t: 'skipWhile' }, ({ e, f }) => iterX(e).c(X.skipWhile(f)))
     .with({ t: 'splitBy' }, ({ e, fp, fm, inclusive, last }) =>
       iterX(e).c(X.splitBy(fp, inclusive, last), X.map(fm)),
     )
@@ -564,6 +577,7 @@ const iterE = (e: Iter): Iterable<[number, Key]> =>
     )
     .with({ t: 'takeWhile' }, ({ e, f }) => E.takeWhile(iterE(e), ([v, k]) => f(v, k)))
     .with({ t: 'skipWhile' }, ({ e, f }) => E.dropWhile(iterE(e), ([v, k]) => f(v, k)))
+    .with({ t: 'skipWhileR' }, ({ e, f }) => E.dropWhileRight(iterE(e), ([v, k]) => f(v, k)))
     .with({ t: 'slice' }, ({ e, from, to }) => E.slice(iterE(e), from, to))
     .with({ t: P.union('skip', 'next') }, ({ e, n }) => E.drop(iterE(e), n))
     .with({ t: 'chain2' }, ({ e1, e2 }) => E.concat(iterE(e1), iterE(e2)))

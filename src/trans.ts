@@ -566,13 +566,39 @@ export const unless: {
  *
  * @see {@linkcode X.skip}
  * @see {@linkcode X.takeWhile}
+ * @see {@linkcode X.skipWhileR}
  */
 export const skipWhile: {
-  <T, K>(pred: (v: T, k: K) => boolean): (self: Iter<T, K>) => Iter<T, K>
+  <T, K>(
+    pred: (v: T, k: K) => boolean,
+  ): <Index extends undefined, Bidi extends undefined>(
+    self: Iter<T, K, Index, Bidi>,
+  ) => Iter<T, K, Index, Bidi>
 } = pred => self => {
   self.k()
-  let { i: init, g: get, n: next, e: each } = self
+  let {
+    i: init,
+    g: get,
+    n: next,
+    e: each,
+    s: slice,
+    l: length,
+    d: index,
+    j: rinit,
+    t: rget,
+    x: rnext,
+    h: reach,
+  } = self
   let flag = true
+  let init_ = cInit(init, () => {
+    if (!flag) return
+    for (;;) {
+      let step = get()
+      flag = !!step && pred(step.v, step.k)
+      if (!flag) break
+      next()
+    }
+  })
   return newIter(
     get,
     next,
@@ -584,15 +610,103 @@ export const skipWhile: {
         }
         return f(v, k)
       }),
-    cInit(init, () => {
-      if (!flag) return
-      for (;;) {
-        let step = get()
-        flag = !!step && pred(step.v, step.k)
-        if (!flag) break
-        next()
-      }
-    }),
+    init_,
+    slice &&
+      ((from, to) => {
+        init_()
+        return slice(from, to)
+      }),
+    length &&
+      (() => {
+        init_()
+        return length()
+      }),
+    index,
+    cInit(rinit, init_),
+    rget,
+    rnext,
+    reach &&
+      (f => {
+        init_()
+        return reach(f)
+      }),
+  )
+}
+
+/**
+ * 跳过结尾满足条件的值。
+ *
+ * @param pred 函数。参数为值和键，返回是否满足条件。
+ *
+ * @returns 方法，返回的迭代器中不包含输入的结尾的满足条件的值。
+ *
+ * @example
+ * ```ts @import.meta.vitest
+ * expect(X.ofArr([1, 2, 3, 1]).c(
+ *   X.skipWhileR(x => x < 2),
+ *   X.toArr,
+ * )).toEqual([1, 2, 3])
+ * ```
+ *
+ * @see {@linkcode X.skipWhile}
+ */
+export const skipWhileR: {
+  <T, K>(pred: (v: T, k: K) => boolean): (self: BidiIter<T, K>) => BidiIter<T, K>
+} = pred => self => {
+  self.k()
+  let {
+    i: init,
+    g: get,
+    n: next,
+    e: each,
+    s: slice,
+    l: length,
+    d: index,
+    j: rinit,
+    t: rget,
+    x: rnext,
+    h: reach,
+  } = self
+  let flag = true
+  let rinit_ = cInit(rinit, () => {
+    if (!flag) return
+    for (;;) {
+      let step = rget()
+      flag = !!step && pred(step.v, step.k)
+      if (!flag) break
+      rnext()
+    }
+  })
+  return newIter(
+    get,
+    next,
+    f => {
+      rinit_()
+      return each(f)
+    },
+    cInit(init, rinit_),
+    slice &&
+      ((from, to) => {
+        rinit_()
+        return slice(from, to)
+      }),
+    length &&
+      (() => {
+        rinit_()
+        return length()
+      }),
+    index,
+    rinit_,
+    rget,
+    rnext,
+    f =>
+      reach((v, k) => {
+        if (flag) {
+          flag = pred(v, k)
+          if (flag) return true
+        }
+        return f(v, k)
+      }),
   )
 }
 
