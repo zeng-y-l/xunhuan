@@ -591,12 +591,10 @@ export const skipWhile: {
   } = self
   let flag = true
   let init_ = cInit(init, () => {
-    if (!flag) return
-    for (;;) {
+    while (flag) {
       let step = get()
       flag = !!step && pred(step.v, step.k)
-      if (!flag) break
-      next()
+      if (flag) next()
     }
   })
   return newIter(
@@ -613,12 +611,12 @@ export const skipWhile: {
     init_,
     slice &&
       ((from, to) => {
-        init_()
+        flag && init_()
         return slice(from, to)
       }),
     length &&
       (() => {
-        init_()
+        flag && init_()
         return length()
       }),
     index,
@@ -627,7 +625,7 @@ export const skipWhile: {
     rnext,
     reach &&
       (f => {
-        init_()
+        flag && init_()
         return reach(f)
       }),
   )
@@ -669,30 +667,28 @@ export const skipWhileR: {
   } = self
   let flag = true
   let rinit_ = cInit(rinit, () => {
-    if (!flag) return
-    for (;;) {
+    while (flag) {
       let step = rget()
       flag = !!step && pred(step.v, step.k)
-      if (!flag) break
-      rnext()
+      if (flag) rnext()
     }
   })
   return newIter(
     get,
     next,
     f => {
-      rinit_()
+      flag && rinit_()
       return each(f)
     },
     cInit(init, rinit_),
     slice &&
       ((from, to) => {
-        rinit_()
+        flag && rinit_()
         return slice(from, to)
       }),
     length &&
       (() => {
-        rinit_()
+        flag && rinit_()
         return length()
       }),
     index,
