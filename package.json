@@ -31,10 +31,12 @@
     "test": "vitest --coverage",
     "bench": "vitest bench",
     "fmt": "biome check --fix --linter-enabled=false",
-    "check": "biome lint --error-on-warnings && tsc",
+    "check": "biome check --error-on-warnings && tsc",
     "compile": "vite build",
     "build": "pnpm run fmt && pnpm run check && pnpm run compile",
-    "pub": "pnpm build && pnpm publish --registry=https://registry.npmjs.org/"
+    "pub": "pnpm publish --registry=https://registry.npmjs.org/",
+
+    "prepare": "pnpm build"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.1.4",
