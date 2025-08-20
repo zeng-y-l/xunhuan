@@ -1,6 +1,6 @@
 {
   "name": "xunhuan",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "description": "小而快的迭代器库",
   "keywords": [
